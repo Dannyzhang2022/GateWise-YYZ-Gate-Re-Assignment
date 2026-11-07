@@ -34,7 +34,7 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
         count_compatible_gates,
         order_waiting_flights,
     )
-    from gate_choice import choose_gate
+    from person3.gate_choice import choose_gate
     from disruption_repair import repair_changed_flights
 
     assignments: list[tuple[str, str]] = []
@@ -122,3 +122,4 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
         "assignments": assignments,
         "reassignments": reassignments,
     }
+
