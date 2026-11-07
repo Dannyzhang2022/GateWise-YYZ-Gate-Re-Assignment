@@ -31,7 +31,7 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
         DOMESTIC,
         INTERNATIONAL,
         compatible,
-        count_compatible_gates,
+        count_usable_gates,
         order_waiting_flights,
     )
     from person3.gate_choice import choose_gate
@@ -73,26 +73,32 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
     for gate_id in gates:
         local_bookings.setdefault(gate_id, [])
 
-    # 2. Order waiting flights by emergency priority and constraint level.
-    compatible_counts: dict[str, int] = {}
+    # 2. Order waiting flights by emergency and their currently usable gate
+    #    count. Recalculate after each placement so a flight that just lost an
+    #    option doesn't retain a stale place in the queue.
     valid_categories = {CARGO, DOMESTIC, INTERNATIONAL}
-    for flight_id, flight in waiting_flights.items():
-        # Unknown category codes cannot be safely placed. Give them zero legal
-        # choices; the selector will never be called for them if ordering skips
-        # zero-option flights.
-        if flight.get("category") not in valid_categories:
-            compatible_counts[flight_id] = 0
-        else:
-            compatible_counts[flight_id] = count_compatible_gates(flight, gates)
-
-    ordered_ids = order_waiting_flights(waiting_flights, compatible_counts)
+    remaining = dict(waiting_flights)
 
     # 3. Select and reserve one gate at a time. Updating local bookings after
-    #    each choice prevents later flights in this tick from taking the same
-    #    gate over an overlapping interval.
-    for flight_id in ordered_ids:
-        flight = waiting_flights.get(flight_id)
-        if flight is None or compatible_counts.get(flight_id, 0) <= 0:
+    #    each choice prevents overlaps and feeds the next live scarcity count.
+    while remaining:
+        usable_counts: dict[str, int] = {}
+        for candidate_id, candidate in remaining.items():
+            if candidate.get("category") not in valid_categories:
+                # Unknown category codes cannot be safely placed.
+                usable_counts[candidate_id] = 0
+            else:
+                usable_counts[candidate_id] = count_usable_gates(
+                    candidate,
+                    gates,
+                    local_bookings,
+                    gate_outages,
+                    flight_id=candidate_id,
+                )
+
+        flight_id = order_waiting_flights(remaining, usable_counts)[0]
+        flight = remaining.pop(flight_id)
+        if usable_counts[flight_id] <= 0:
             continue
 
         gate_id = choose_gate(

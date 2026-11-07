@@ -6,6 +6,7 @@ from person2.flight_order import (
     INTERNATIONAL,
     compatible,
     count_compatible_gates,
+    count_usable_gates,
     order_waiting_flights,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "INTERNATIONAL",
     "compatible",
     "count_compatible_gates",
+    "count_usable_gates",
     "order_waiting_flights",
 ]
