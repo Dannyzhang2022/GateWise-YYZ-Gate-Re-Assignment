@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 SCENARIOS = [
     "simple", "cascade_1", "cascade_2",
     "cargo", "overnight", "equipment_upgrade", "cancel", "domestic_787",
-    "gate_outage", "busy_day", "rush_hour", "emergencies",
+    "gate_outage", "busy_day", "rush_hour", "emergencies", "combined_24h",
 ]
 
 

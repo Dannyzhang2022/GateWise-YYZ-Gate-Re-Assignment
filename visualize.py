@@ -7,8 +7,8 @@ Two ways to use it:
 
        python visualize.py --serve
 
-   Opens a page with a scenario dropdown and a solution-module box (defaults to
-   "solution", i.e. your solution.py). Press Run and it executes your ACTUAL
+   Opens a page with scenario and solution dropdowns (defaults to
+   "solution_scored" when available). Press Run and it executes your ACTUAL
    code -- freshly imported, so saved edits are picked up without restarting --
    against the chosen scenario, then renders gates as rows, flight occupancy as
    bars on a time axis, gate outages as red blocks, a play/pause "operational
@@ -45,6 +45,11 @@ OUT_DIR = "visualization"
 # Shared trace + page generation
 # ---------------------------------------------------------------------------
 def list_scenarios(pattern: str = "flight_data/*.json") -> list:
+    return sorted(Path(p).stem for p in glob.glob(pattern))
+
+
+def list_solutions(pattern: str = "solution*.py") -> list:
+    """Return importable solution modules available in the project root."""
     return sorted(Path(p).stem for p in glob.glob(pattern))
 
 
@@ -96,6 +101,10 @@ def _make_handler(static_path: str):
 
             if parsed.path == "/api/scenarios":
                 self._send_json({"scenarios": list_scenarios()})
+                return
+
+            if parsed.path == "/api/solutions":
+                self._send_json({"solutions": list_solutions()})
                 return
 
             if parsed.path == "/api/run":
@@ -290,9 +299,12 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .legend .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
   .dis-entry { padding: 6px 0; border-bottom: 1px solid #1b222b; }
   .dis-entry .dis-time { color: #8b949e; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
-  .dis-entry .dis-line { display: block; font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 1px 0; color: #c9d1d9; }
-  .dis-entry .dis-line.o { color: #f0883e; } .dis-entry .dis-line.c { color: #f85149; }
-  .dis-entry .dis-line.r { color: #58a6ff; } .dis-entry .dis-line.u { color: #8b949e; }
+  .dis-entry .dis-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+                         font-size: 13px; padding: 5px 0; color: #c9d1d9; }
+  .dis-entry .dis-kind { font-weight: 750; letter-spacing: .02em; }
+  .dis-entry .dis-line.disruption .dis-kind { color: #f0883e; }
+  .dis-entry .dis-line.solution .dis-kind { color: #58a6ff; }
+  .dis-entry .dis-reason { color: #8b949e; }
 </style>
 </head>
 <body>
@@ -307,6 +319,10 @@ _TEMPLATE = r"""<!DOCTYPE html>
     <div class="group">
       <label>Scenario</label>
       <select id="scenarioSelect"></select>
+    </div>
+    <div class="group">
+      <label>Solution</label>
+      <select id="solutionSelect"></select>
     </div>
     <button id="runBtn" class="primary">&#9654; Run</button>
     <span class="muted" id="runStatus"></span>
@@ -614,19 +630,19 @@ function renderDisruptionLog(){
   const entries = [];
   for(let i = 0; i <= planIdx; i++){
     const tick = TRACE.ticks[i];
-    const lines = (tick.log||[]).filter(L =>
-      /\[(OUTAGE|CANCEL|DIVERT|UPDATE|REASSIGN)\]/.test(L)
-    );
-    if(!lines.length) continue;
-    const lineHtml = lines.map(L => {
-      let cls = "";
-      if(L.includes("[OUTAGE]")) cls = "o";
-      else if(L.includes("[CANCEL]")) cls = "c";
-      else if(L.includes("[DIVERT]")) cls = "o";
-      else if(L.includes("[REASSIGN]")) cls = "r";
-      else if(L.includes("[UPDATE]")) cls = "u";
-      const safe = L.replace(/&/g,"&amp;").replace(/</g,"&lt;");
-      return `<span class="dis-line ${cls}">${safe}</span>`;
+    const events = tick.events || [];
+    if(!events.length) continue;
+    const escapeHtml = value => String(value ?? "")
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+    const lineHtml = events.map(event => {
+      const isSolution = event.kind === "SOLUTION";
+      const label = isSolution ? "SOLUTION:" : "DISRUPTION:";
+      return `<div class="dis-line ${isSolution ? "solution" : "disruption"}">`
+        + `<span class="dis-kind">${label}</span>`
+        + `<span>${escapeHtml(event.subject)}</span>`
+        + `<span class="dis-reason"><strong>REASON:</strong> ${escapeHtml(event.reason)}</span>`
+        + `</div>`;
     }).join("");
     entries.push(`<div class="dis-entry"><div class="dis-time">@ ${tick.time_label}</div>${lineHtml}</div>`);
   }
@@ -729,13 +745,19 @@ function showError(msg){
 
 function runNow(){
   const scenario = document.getElementById("scenarioSelect").value;
-  const solution = "solution";
+  const solution = document.getElementById("solutionSelect").value;
   const btn = document.getElementById("runBtn"), status = document.getElementById("runStatus");
   btn.disabled = true; status.textContent = "running…"; showError(null);
   fetch(`/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`)
     .then(r => r.json())
     .then(data => {
       if(data.error){ showError(data.error); document.getElementById("chartPlaceholder").style.display=""; return; }
+      if(!data.trace || !data.trace.ticks || !data.trace.ticks.length){
+        const reason = data.trace && data.trace.result && data.trace.result.reason;
+        showError(reason || "The simulation produced no decision ticks.");
+        document.getElementById("chartPlaceholder").style.display="";
+        return;
+      }
       const ph = document.getElementById("chartPlaceholder"); if(ph) ph.remove();
       loadTrace(data.trace);
     })
@@ -746,11 +768,16 @@ function runNow(){
 if(SERVER_MODE){
   document.getElementById("runbar").style.display = "flex";
   document.getElementById("runBtn").onclick = runNow;
-  fetch("/api/scenarios").then(r => r.json()).then(data => {
+  Promise.all([fetch("/api/scenarios").then(r => r.json()),
+               fetch("/api/solutions").then(r => r.json())]).then(([scenarios, solutions]) => {
     const sel = document.getElementById("scenarioSelect");
-    sel.innerHTML = data.scenarios.map(s => `<option value="${s}">${s}</option>`).join("");
-    if(data.scenarios.length) runNow();
-  }).catch(err => showError("Could not load scenario list: " + err));
+    sel.innerHTML = scenarios.scenarios.map(s => `<option value="${s}">${s}</option>`).join("");
+    const solutionSel = document.getElementById("solutionSelect");
+    solutionSel.innerHTML = solutions.solutions.map(s => `<option value="${s}">${s}</option>`).join("");
+    if(solutions.solutions.includes("solution_scored")) solutionSel.value = "solution_scored";
+    else if(solutions.solutions.includes("solution")) solutionSel.value = "solution";
+    if(scenarios.scenarios.length && solutions.solutions.length) runNow();
+  }).catch(err => showError("Could not load scenario or solution list: " + err));
 } else {
   document.getElementById("chartPlaceholder").remove();
   loadTrace(MODE.trace);

@@ -117,6 +117,7 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
     try:
         for t in sorted_times:
             tick_lines = []
+            tick_events = []
             messages = schedule[t]
             log(f"--- t={fmt(t)} | {len(messages)} message(s) ---")
 
@@ -132,15 +133,65 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                     gate_outages[gid].append(window)
                     outaged_gates.add(gid)
                     log(f"  [OUTAGE] Gate {gid} unavailable [{fmt(window[0])}, {fmt(window[1])}]")
+                    tick_events.append({
+                        "kind": "DISRUPTION",
+                        "subject": f"Gate {gid} became unavailable.",
+                        "reason": f"Outage window: {fmt(window[0])} to {fmt(window[1])}.",
+                    })
                     continue
                 fid, warn = store.apply(msg, t)
                 if warn:
                     log(f"  [WARN] {warn}")
                 if fid:
                     touched.append(fid)
-                    if msg.get("action") == "DivertFlight":
+                    action = msg.get("action")
+                    if action == "DivertFlight":
                         log(f"  [DIVERT] unscheduled {store.flights[fid].get('reason','diversion')} "
                             f"arrival: {fid}")
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid} diverted to YYZ.",
+                            "reason": msg.get("reason") or "An unscheduled diversion was received.",
+                        })
+                    elif action == "CancelFlight":
+                        scope = msg.get("cancelScope", {})
+                        if scope.get("type") == "SpecificLeg":
+                            detail = (f"The {scope.get('departureStation', '?')} to "
+                                      f"{scope.get('arrivalStation', '?')} leg was canceled.")
+                        else:
+                            detail = "All legs were canceled."
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid} was canceled.",
+                            "reason": detail,
+                        })
+                    elif action == "UpdateTiming":
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid}'s schedule changed.",
+                            "reason": "One or more scheduled departure or arrival times were updated.",
+                        })
+                    elif action == "UpdateEquipment":
+                        equipment = msg.get("equipmentUpdate", {})
+                        scope = equipment.get("scope", "flight")
+                        aircraft = equipment.get("aircraftType", "the aircraft")
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid}'s aircraft assignment changed.",
+                            "reason": f"Equipment was updated to {aircraft} for {scope}.",
+                        })
+                    elif action == "ReplaceFlight":
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid}'s schedule was replaced.",
+                            "reason": "A replacement flight message was received.",
+                        })
+                    elif action == "ReinstateFlight":
+                        tick_events.append({
+                            "kind": "DISRUPTION",
+                            "subject": f"Flight {fid} was reinstated.",
+                            "reason": "The previous cancellation was lifted.",
+                        })
 
             # 2) Free gates of assigned flights that were cancelled / lost YYZ legs
             for fid in list(flight_assignments):
@@ -227,7 +278,8 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
             # 6) Reassignments first, then new assignments
             for fid, new_gid in reassignments_out:
                 _apply_reassignment(fid, new_gid, t, gates, store, ac_info, stations,
-                                    gate_assignments, gate_outages, flight_assignments, flagged, score, log)
+                                    gate_assignments, gate_outages, flight_assignments, flagged, score, log,
+                                    timeline_events=tick_events, disruption_reasons=reasons)
             for fid, gid in assignments_out:
                 _apply_assignment(fid, gid, t, gates, store, ac_info, stations,
                                   gate_assignments, gate_outages, flight_assignments, score, log)
@@ -266,6 +318,7 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                     "assignments": [[a, b] for a, b in assignments_out],
                     "reassignments": [[a, b] for a, b in reassignments_out],
                 }
+                entry["events"] = tick_events
                 trace.append(entry)
 
     except HardFailure as hf:
@@ -367,7 +420,8 @@ def _apply_assignment(fid, gid, t, gates, store, ac_info, stations,
 
 
 def _apply_reassignment(fid, new_gid, t, gates, store, ac_info, stations,
-                        gate_assignments, gate_outages, flight_assignments, flagged, score, log):
+                        gate_assignments, gate_outages, flight_assignments, flagged, score, log,
+                        timeline_events=None, disruption_reasons=None):
     if fid not in flight_assignments:
         raise HardFailure(f"Cannot reassign {fid}: not currently assigned.", t)
     if new_gid not in gates:
@@ -403,6 +457,22 @@ def _apply_reassignment(fid, new_gid, t, gates, store, ac_info, stations,
     elif fid not in flagged:
         score.add("reassignment", f"{fid}: {old_gid}->{new_gid}", t)
     log(f"  [REASSIGN] {fid}: {old_gid} -> {new_gid}  {_intervals_label(p.intervals)}")
+    if timeline_events is not None:
+        if fid in flagged:
+            change_reason = (disruption_reasons or {}).get(fid)
+            if change_reason == "outage":
+                reason = f"A gate outage made gate {old_gid} unavailable."
+            else:
+                reason = "A flight schedule or equipment change made the current gate unsuitable."
+        elif any(event.get("kind") == "DISRUPTION" for event in timeline_events):
+            reason = "The gate plan was adjusted to make room for flights affected by this disruption."
+        else:
+            reason = "The gate plan was adjusted to improve the overall assignment."
+        timeline_events.append({
+            "kind": "SOLUTION",
+            "subject": f"Flight {fid} was moved from gate {old_gid} to gate {new_gid}.",
+            "reason": reason,
+        })
 
 
 def _finish(score, gates, flight_assignments, store, ac_info, stations, log,

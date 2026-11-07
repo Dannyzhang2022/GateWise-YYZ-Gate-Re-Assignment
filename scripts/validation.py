@@ -5,7 +5,7 @@ import json
 import re
 from datetime import datetime
 
-valid_aircraft_types = ["73G", "321", "789"]
+valid_aircraft_types = ["73G", "321", "789", "76F"]
 
 def validate_static_info_json(filename):
     valid = True
@@ -70,10 +70,24 @@ def validate_flight_schedule_json(filename):
             # -----------------------
             if message['action'] not in [
                 "CreateFlight", "ReplaceFlight", "UpdateTiming",
-                "CancelFlight", "ReinstateFlight", "UpdateEquipment"
+                "CancelFlight", "ReinstateFlight", "UpdateEquipment",
+                "DivertFlight", "GateOutage"
             ]:
                 print(f"Invalid message_type: {message['action']} at time: {time}")
                 valid = False
+
+            # Gate outages are resource messages, not flight messages. The
+            # evaluator supports them directly and they have no flight object.
+            if message.get("action") == "GateOutage":
+                if not isinstance(message.get("gate"), str) or not message["gate"]:
+                    print(f"Invalid gate at time: {time}")
+                    valid = False
+                for field in ("scheduledStartTime", "scheduledEndTime"):
+                    value = message.get(field)
+                    if value is not None and (not isinstance(value, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value)):
+                        print(f"Invalid {field}: {value} at time: {time}")
+                        valid = False
+                continue
 
             # -----------------------
             # Flight object validation
@@ -115,7 +129,7 @@ def validate_flight_schedule_json(filename):
 
             # Legs validation (Create, Replace, UpdateTiming)
 
-            if action in ["CreateFlight", "ReplaceFlight", "UpdateTiming"]:
+            if action in ["CreateFlight", "ReplaceFlight", "UpdateTiming", "DivertFlight"]:
                 legs = message.get("legs")
                 if not isinstance(legs, list) or len(legs) == 0:
                     print(f"Missing or invalid legs array at time: {time}")

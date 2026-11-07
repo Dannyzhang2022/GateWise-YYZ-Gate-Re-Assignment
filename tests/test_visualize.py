@@ -9,11 +9,11 @@ import urllib.request
 
 from conftest import scenario_path
 from evaluator import run_sim
-from visualize import generate, list_scenarios, serve
+from visualize import _TEMPLATE, generate, list_scenarios, list_solutions, serve
 
 
 def test_record_mode_returns_a_trace(static_path):
-    result = run_sim(static_path, scenario_path("gate_outage"), "solution_kd",
+    result = run_sim(static_path, scenario_path("gate_outage"), "solution_bestfit",
                      verbose=False, record=True)
     trace = result["trace"]
     assert [g["id"] for g in trace["gates"]]          # gate metadata present
@@ -22,13 +22,20 @@ def test_record_mode_returns_a_trace(static_path):
     last = trace["ticks"][-1]
     assert "D1" in last["outages"]
     assert "D1" not in last["plan"]
+    disruptions = [event for event in last["events"] if event["kind"] == "DISRUPTION"]
+    solutions = [event for event in last["events"] if event["kind"] == "SOLUTION"]
+    assert any("Gate D1 became unavailable" in event["subject"]
+               and event["reason"] for event in disruptions)
+    assert any("moved from gate D1" in event["subject"]
+               and event["reason"] for event in solutions)
+    assert "DISRUPTION:" in _TEMPLATE and "SOLUTION:" in _TEMPLATE and "REASON:" in _TEMPLATE
 
 
 def test_generate_writes_self_contained_html(static_path):
     fd, path = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
-        out, result = generate(static_path, scenario_path("gate_outage"), "solution_kd", path)
+        out, result = generate(static_path, scenario_path("gate_outage"), "solution_bestfit", path)
         html = open(out, encoding="utf-8").read()
         # embedded mode payload must be valid JSON and self-contained (server: false)
         m = re.search(r"const MODE = (\{.*?\});", html, re.S)
@@ -43,6 +50,13 @@ def test_generate_writes_self_contained_html(static_path):
 def test_list_scenarios_matches_flight_data_dir():
     names = list_scenarios()
     assert "simple" in names and "gate_outage" in names
+    assert names == sorted(names)
+
+
+def test_list_solutions_matches_solution_modules():
+    names = list_solutions()
+    assert "solution_scored" in names
+    assert "solution_firstfit" in names
     assert names == sorted(names)
 
 
@@ -66,16 +80,21 @@ def test_server_index_and_scenarios(static_path):
     with urllib.request.urlopen("http://127.0.0.1:8851/", timeout=5) as r:
         html = r.read().decode("utf-8")
     assert r.status == 200 and "runbar" in html
+    assert 'id="solutionSelect"' in html
 
     status, data = _get_json("http://127.0.0.1:8851/api/scenarios")
     assert status == 200
     assert "simple" in data["scenarios"]
 
+    status, data = _get_json("http://127.0.0.1:8851/api/solutions")
+    assert status == 200
+    assert "solution_scored" in data["solutions"]
+
 
 def test_server_run_executes_real_solution(static_path):
     _start_server(8852)
     status, data = _get_json(
-        "http://127.0.0.1:8852/api/run?scenario=gate_outage&solution=solution_kd")
+        "http://127.0.0.1:8852/api/run?scenario=gate_outage&solution=solution_bestfit")
     assert status == 200
     assert data["trace"]["result"]["status"] == "OK"
 
