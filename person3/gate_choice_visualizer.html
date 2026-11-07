@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gate choice — decision visualizer</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1120;--panel:#131d31;--line:#2c3a53;--text:#edf3ff;--muted:#a9b7cc;--cyan:#58d7ce;--green:#54d69a;--red:#ff7785;--amber:#ffce75;--blue:#72a6ff}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 12% 0%,#1b2e49 0,transparent 38%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+    main{max-width:1240px;margin:auto;padding:30px 20px 60px}.eyebrow{text-transform:uppercase;letter-spacing:.15em;color:var(--cyan);font-size:12px;font-weight:800}h1{font-size:clamp(30px,4vw,48px);line-height:1.1;margin:7px 0 12px}.intro{color:var(--muted);max-width:780px;margin:0 0 26px}.grid{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:18px;align-items:start}.panel{background:linear-gradient(160deg,rgba(24,37,59,.97),rgba(16,25,42,.97));border:1px solid var(--line);border-radius:16px;padding:19px;box-shadow:0 18px 44px #0002}.panel h2{font-size:18px;margin:0 0 12px}.panel h3{font-size:14px;margin:0 0 9px;color:#dce8fa}.control{display:grid;gap:5px;margin:12px 0;color:var(--muted);font-size:13px}select,input[type=number]{background:#0b1424;border:1px solid #394a65;border-radius:8px;color:var(--text);padding:9px 10px;font:inherit}.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.check{display:flex;gap:9px;align-items:center;margin:13px 0;color:var(--text)}input[type=checkbox]{accent-color:var(--cyan);width:17px;height:17px}.preset{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}.preset button{border:1px solid #435775;border-radius:99px;background:#17263e;color:#dce8fa;padding:7px 10px;cursor:pointer;font:inherit;font-size:12px}.preset button:hover{border-color:var(--cyan)}.topline{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.result{font-weight:800;color:var(--green);font-size:19px}.result.none{color:var(--red)}.trace{display:grid;gap:8px;margin:13px 0 18px}.trace-step{display:flex;gap:10px;align-items:flex-start;background:#0b1424;border:1px solid #26354e;border-radius:10px;padding:9px 11px;color:var(--muted);font-size:13px}.trace-step b{color:var(--text)}.num{flex:none;width:22px;height:22px;border-radius:50%;background:#203752;color:var(--cyan);font-size:12px;text-align:center;line-height:22px;font-weight:800}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:640px;font-size:13px}th{text-align:left;color:#93a6c0;text-transform:uppercase;letter-spacing:.06em;font-size:10px;padding:9px;border-bottom:1px solid var(--line)}td{padding:10px 9px;border-bottom:1px solid #27364e;vertical-align:top}.gate-name{font-weight:800;color:var(--text)}.safe{color:var(--green);font-weight:800}.blocked{color:var(--red);font-weight:800}.winner{background:#14352966}.chip{display:inline-block;border:1px solid #40516c;border-radius:99px;padding:2px 7px;margin:2px 3px 2px 0;color:#cad8eb;font-size:11px;white-space:nowrap}.chip.bad{border-color:#77434e;color:#ffb4bb}.chip.good{border-color:#27634c;color:#98f0bd}.cost{font-variant-numeric:tabular-nums;color:#dce8fa;white-space:nowrap}.bar{height:5px;min-width:2px;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:5px;margin-top:5px}.timeline{margin-top:20px}.axis{display:flex;justify-content:space-between;color:#8497b0;font-size:10px;padding-left:66px;margin-bottom:6px}.lane{display:grid;grid-template-columns:58px 1fr;gap:8px;align-items:center;margin:8px 0}.lane-label{font-weight:800;font-size:12px}.track{height:34px;border:1px solid #31425d;border-radius:7px;position:relative;overflow:hidden;background:repeating-linear-gradient(90deg,#111d30 0,#111d30 calc(25% - 1px),#2c3d57 calc(25% - 1px),#2c3d57 25%)}.block{position:absolute;top:4px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:750;white-space:nowrap;overflow:hidden;padding:0 4px}.block.flight{background:#347a8d;color:white;border:1px solid #67e5d6}.block.other{background:#8b4b37d9;color:#fff1dc;border:1px solid #d99166}.block.outage{background:repeating-linear-gradient(135deg,#673343,#673343 5px,#a64552 5px,#a64552 10px);color:#fff;border:1px solid #ff8790}.legend{display:flex;gap:13px;flex-wrap:wrap;color:var(--muted);font-size:11px;margin:10px 0 0 66px}.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-2px;margin-right:4px}.explainer{margin-top:18px}.rule-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.rule{background:#0b1424;border:1px solid #283750;border-radius:10px;padding:11px;font-size:12px;color:var(--muted)}.rule strong{display:block;color:var(--text);margin-bottom:3px}.footer{color:#8396b0;font-size:11px;margin-top:14px}@media(max-width:850px){.grid{grid-template-columns:1fr}.rule-list{grid-template-columns:1fr 1fr}}@media(max-width:520px){main{padding:22px 12px 40px}.panel{padding:14px}.rule-list{grid-template-columns:1fr}.row{grid-template-columns:1fr 1fr}}
+    .track{background:repeating-linear-gradient(90deg,#111d30 0,#111d30 calc(var(--step) - 1px),#2c3d57 calc(var(--step) - 1px),#2c3d57 var(--step))}
+    .decision-tree{margin:15px 0 20px;overflow:auto}.tree-root{position:relative;width:min(100%,430px);margin:0 auto 28px;padding:12px 14px;text-align:center;background:#102437;border:1px solid #3b6977;border-radius:12px}.tree-root:after{content:"";position:absolute;left:50%;bottom:-18px;height:17px;border-left:1px solid #58718c}.tree-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;padding-top:2px}.tree-branch{position:relative;padding-top:15px}.tree-branch:before{content:"";position:absolute;left:50%;top:0;height:14px;border-left:1px solid #58718c}.tree-card{height:100%;padding:12px;border:1px solid #3a4a63;border-left:3px solid var(--red);border-radius:11px;background:#0d1728}.tree-card.safe{border-left-color:var(--green)}.tree-card.winner{border-color:#4cc58e;background:#123226}.tree-title{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:9px}.tree-gate{font-weight:800;color:var(--text)}.tree-state{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--red)}.tree-card.safe .tree-state{color:var(--green)}.tree-card.winner .tree-state{color:#9bf0c1}.tree-step{margin-top:6px;padding:7px 8px;border-radius:7px;background:#142238;color:var(--muted);font-size:11px}.tree-step strong{color:var(--text)}.tree-outcome{margin-top:12px;text-align:center;font-weight:800;color:var(--green)}.tree-outcome.none{color:var(--red)}
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Airport gate assignment · interactive explainer</div>
+  <h1>Why this gate?</h1>
+  <p class="intro">First we remove every gate that breaks a safety rule. Then we score the remaining gates for walking distance, use of a customs gate by a domestic flight, and moving an already assigned flight. Lower cost wins.</p>
+  <div class="grid">
+    <section class="panel">
+      <h2>Flight and scenario</h2>
+      <label class="control">Example scenario<select id="scenario"></select></label>
+      <label class="control">Flight category<select id="category"><option value="0">Cargo</option><option value="1">Domestic passenger</option><option value="2">International passenger</option></select></label>
+      <label class="control">Aircraft wingspan (metres)<input id="wingspan" type="number" min="0" step="0.1"></label>
+      <label class="check"><input id="jetbridge" type="checkbox"> Jetbridge required</label>
+      <div class="row">
+        <label class="control">Scheduled occupancy starts (minutes after midnight)<input id="start" type="number" min="0" max="1439"></label>
+        <label class="control">Scheduled occupancy ends<input id="end" type="number" min="1" max="1440"></label>
+      </div>
+      <label class="control">Flight delay from schedule (minutes)<input id="delay" type="number" min="0" max="720" step="5"></label>
+      <label class="control">Current time for move-cost example<input id="now" type="number" min="0" max="1440"></label>
+      <div class="preset" id="presets"></div>
+      <p class="footer">In this demo, the delay shifts the entire occupancy window. A live evaluator should pass its already updated intervals. The four scenarios reset the sample gates, bookings and outages.</p>
+    </section>
+    <section class="panel">
+      <div class="topline"><h2>Decision trace</h2><div id="result" class="result"></div></div>
+      <div id="trace" class="trace"></div>
+      <div class="decision-tree"><h3>Gate decision tree</h3><div id="decisionTree" aria-live="polite"></div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Rank / gate</th><th>Hard rule checks</th><th>Time availability</th><th>Soft costs</th><th>Total</th></tr></thead>
+        <tbody id="choices"></tbody>
+      </table></div>
+      <div class="timeline"><h3 id="timelineTitle">Gate occupancy timeline</h3><div id="timeline"></div></div>
+      <div class="legend"><span><i class="swatch" style="background:#347a8d"></i>flight being placed</span><span><i class="swatch" style="background:#8b4b37"></i>another flight</span><span><i class="swatch" style="background:#a64552"></i>outage</span></div>
+    </section>
+  </div>
+  <section class="panel explainer">
+    <h2>The rules, in plain language</h2>
+    <div class="rule-list">
+      <div class="rule"><strong>Aircraft and gate type — hard rule</strong>Cargo goes only to cargo gates. International passengers need international gates. Domestic passengers can use domestic or international gates.</div>
+      <div class="rule"><strong>Wingspan and jetbridge — hard rules</strong>The gate's wingspan limit must fit the aircraft. If the flight needs a jetbridge, the gate must have one.</div>
+      <div class="rule"><strong>Bookings and outages — hard rules</strong>Overlapping intervals conflict. Intervals are half-open, so one flight ending at 11:00 and another starting at 11:00 may share a gate.</div>
+      <div class="rule"><strong>Walking — soft cost</strong>Each metre adds 0.01 points. A shorter walk is better, once safety rules are satisfied.</div>
+      <div class="rule"><strong>Customs gate use — soft cost</strong>A domestic flight at an international gate adds 5 points, leaving more customs capacity for international flights.</div>
+      <div class="rule"><strong>Moving a flight — soft cost</strong>Keeping its current gate costs 0. Moving it costs 10 points before arrival or 50 after arrival, when a current time is supplied.</div>
+    </div>
+  </section>
+</main>
+<script>
+  const scenarios = {
+    domestic: {
+      title: "Domestic flight: distance vs. customs gate",
+      flight: {category:1,wingspan:32,jetbridge_required:true,intervals:[[540,600]],current_time:500},
+      gates: {D1:{gate_type:1,max_wingspan:38,jetbridge:true,dist:200},D2:{gate_type:1,max_wingspan:42,jetbridge:true,dist:400},I1:{gate_type:2,max_wingspan:45,jetbridge:true,dist:90},C1:{gate_type:0,max_wingspan:50,jetbridge:false,dist:20}},
+      assignments: {D1:[{flight_id:"AC201",intervals:[[570,630]]}],D2:[{flight_id:"F1",intervals:[[540,600]]}]}, outages: {}
+    },
+    international: {
+      title: "International flight: outage and type restriction",
+      flight: {category:2,wingspan:40,jetbridge_required:true,intervals:[[720,780]],current_time:680},
+      gates: {D1:{gate_type:1,max_wingspan:45,jetbridge:true,dist:50},I1:{gate_type:2,max_wingspan:42,jetbridge:true,dist:80},I2:{gate_type:2,max_wingspan:45,jetbridge:true,dist:250},C1:{gate_type:0,max_wingspan:50,jetbridge:true,dist:25}},
+      assignments: {}, outages: {I1:[[750,810]]}
+    },
+    cargo: {
+      title: "Cargo flight: passenger gates are not allowed",
+      flight: {category:0,wingspan:35,jetbridge_required:false,intervals:[[300,390]],current_time:260},
+      gates: {D1:{gate_type:1,max_wingspan:50,jetbridge:true,dist:20},I1:{gate_type:2,max_wingspan:50,jetbridge:true,dist:60},C1:{gate_type:0,max_wingspan:40,jetbridge:false,dist:350},C2:{gate_type:0,max_wingspan:30,jetbridge:false,dist:10}},
+      assignments: {}, outages: {}
+    },
+    impossible: {
+      title: "No safe gate: fail closed",
+      flight: {category:2,wingspan:60,jetbridge_required:true,intervals:[[1000,1060]],current_time:980},
+      gates: {I1:{gate_type:2,max_wingspan:48,jetbridge:true,dist:30},I2:{gate_type:2,max_wingspan:70,jetbridge:false,dist:80},D1:{gate_type:1,max_wingspan:70,jetbridge:true,dist:10},C1:{gate_type:0,max_wingspan:70,jetbridge:true,dist:10}},
+      assignments: {}, outages: {I2:[[990,1080]]}
+    }
+  };
+  const names={0:"Cargo",1:"Domestic",2:"International"};
+  const w={walk:.01,premium:5,move:10,moveAfter:50};
+  let active="domestic";
+  const $=id=>document.getElementById(id);
+  function overlap(a,b){return a[0]<b[1]&&b[0]<a[1]}
+  function compatible(f,g){
+    const why=[];
+    if(![0,1,2].includes(f.category))why.push("unknown flight category");
+    if(!Number.isFinite(f.wingspan)||f.wingspan<0)why.push("invalid aircraft wingspan");
+    if(f.category===0&&g.gate_type!==0)why.push("cargo requires cargo gate");
+    if(f.category===2&&g.gate_type!==2)why.push("international requires international gate");
+    if(f.category===1&&g.gate_type===0)why.push("passenger flight cannot use cargo gate");
+    if(f.wingspan>g.max_wingspan)why.push(`wingspan ${f.wingspan} m > ${g.max_wingspan} m limit`);
+    if(f.jetbridge_required&&!g.jetbridge)why.push("jetbridge required");
+    return why;
+  }
+  function rank(){
+    const f=readFlight(),s=scenarios[active],rows=[];
+    const validInterval=Number.isFinite(f.scheduled[0])&&Number.isFinite(f.scheduled[1])&&Number.isFinite(f.delay_minutes)&&Number.isFinite(f.intervals[0][0])&&Number.isFinite(f.intervals[0][1])&&f.scheduled[0]>=0&&f.scheduled[0]<f.scheduled[1]&&f.scheduled[1]<=1440&&f.delay_minutes>=0&&f.delay_minutes<=720&&f.intervals[0][0]<f.intervals[0][1];
+    const currentGate=Object.entries(s.assignments).find(([,bs])=>bs.some(b=>b.flight_id==="F1"))?.[0]||null;
+    for(const [id,g] of Object.entries(s.gates)){
+      const hard=compatible(f,g),time=[];
+      if(!validInterval)time.push("invalid or missing occupancy interval");
+      for(const b of (s.assignments[id]||[]))if(b.flight_id!=="F1"&&f.intervals.some(a=>b.intervals.some(x=>overlap(a,x))))time.push(`overlaps ${b.flight_id}`);
+      for(const o of (s.outages[id]||[]))if(f.intervals.some(a=>overlap(a,o)))time.push("gate outage");
+      const safe=!hard.length&&!time.length;
+      const costs={walk:Math.max(0,g.dist)*w.walk,premium:f.category===1&&g.gate_type===2?w.premium:0,move:0};
+      if(currentGate&&id!==currentGate)costs.move=+$('now').value>=f.intervals[0][0]?w.moveAfter:w.move;
+      rows.push({id,g,hard,time,safe,costs,total:costs.walk+costs.premium+costs.move});
+    }
+    rows.sort((a,b)=>(Number(b.safe)-Number(a.safe))||a.total-b.total||a.id.localeCompare(b.id));
+    return {f,rows,best:rows.find(x=>x.safe),validInterval};
+  }
+  function readFlight(){const a=$('start').value===""?NaN:+$('start').value,b=$('end').value===""?NaN:+$('end').value,d=$('delay').value===""?NaN:+$('delay').value;return {category:+$('category').value,wingspan:+$('wingspan').value,jetbridge_required:$('jetbridge').checked,scheduled:[a,b],delay_minutes:d,intervals:[[a+d,b+d]],current_time:+$('now').value}}
+  function pill(text,ok){return `<span class="chip ${ok?'good':'bad'}">${esc(text)}</span>`}
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+  function fmt(n){return Number.isFinite(n)?n.toFixed(2):"—"}
+  function formatTime(min){if(!Number.isFinite(min))return "?";const day=Math.floor(min/1440),within=((Math.round(min)%1440)+1440)%1440;return `${String(Math.floor(within/60)).padStart(2,'0')}:${String(within%60).padStart(2,'0')}${day?` +${day}d`:""}`}
+  function render(){
+    const {f,rows,best,validInterval}=rank();
+    const delayLabel=Number.isFinite(f.delay_minutes)?` · flight delay +${fmt(f.delay_minutes)} min`:"";
+    const result=$('result');result.textContent=best?`Best safe gate: ${best.id} · ${fmt(best.total)} points${delayLabel}`:`No safe gate · leave unassigned${delayLabel}`;result.classList.toggle("none",!best);
+    const categories=rows.length;
+    const windowLabel=validInterval?`${formatTime(f.intervals[0][0])}–${formatTime(f.intervals[0][1])}`:"invalid interval";
+    $('trace').innerHTML=`<div class="trace-step"><span class="num">1</span><span><b>Check the aircraft rules.</b> ${categories} gates checked for ${names[f.category]||"unknown"} type, wingspan and jetbridge.</span></div><div class="trace-step"><span class="num">2</span><span><b>Apply the delay to this demo window.</b> +${Number.isFinite(f.delay_minutes)?fmt(f.delay_minutes):"?"} minutes moves occupancy to ${windowLabel}. That can create or remove a time conflict.</span></div><div class="trace-step"><span class="num">3</span><span><b>Check availability.</b> Remove gates with overlapping bookings or outages. Touching endpoints are allowed.</span></div><div class="trace-step"><span class="num">4</span><span><b>Rank only safe gates.</b> Add distance + customs-gate + gate-move costs; lowest total wins. Delay itself is context, not a gate cost.</span></div>`;
+    renderDecisionTree(f,rows,best,validInterval);
+    const max=Math.max(1,...rows.filter(r=>r.safe).map(r=>r.total));
+    $('choices').innerHTML=rows.map((r,i)=>{
+      const hardOk=!r.hard.length,timeOk=!r.time.length,checks=[pill(hardOk?"aircraft rules pass":"aircraft rules fail",hardOk),pill(timeOk?"available":"blocked",timeOk)];
+      const why=[...r.hard,...r.time];
+      return `<tr class="${best&&r.id===best.id?'winner':''}"><td><span class="gate-name">${r.safe?`#${rows.filter(x=>x.safe).findIndex(x=>x.id===r.id)+1} `:""}${esc(r.id)}</span><br><span class="${r.safe?'safe':'blocked'}">${r.safe?'SAFE':'REJECTED'}</span></td><td>${checks.join("")}<br>${r.hard.map(x=>pill(x,false)).join("")||`<span class="chip good">${names[f.category]} fit · ${f.wingspan}/${r.g.max_wingspan} m · ${f.jetbridge_required?(r.g.jetbridge?'bridge ✓':'bridge ✗'):'bridge not needed'}</span>`}</td><td>${why.length?why.map(x=>pill(x,false)).join(""):`<span class="chip good">No booking or outage overlap</span>`}</td><td class="cost">walk ${fmt(r.costs.walk)}<br>customs ${fmt(r.costs.premium)}<br>move ${fmt(r.costs.move)}${r.safe?`<div class="bar" style="width:${Math.max(3,100*r.total/max)}%"></div>`:""}</td><td class="cost"><b>${r.safe?fmt(r.total):"—"}</b></td></tr>`;
+    }).join("");
+    renderTimeline(f,scenarios[active]);
+  }
+  function renderDecisionTree(f,rows,best,validInterval){
+    const safeCount=rows.filter(r=>r.safe).length;
+    const delay=Number.isFinite(f.delay_minutes)?` · delay +${fmt(f.delay_minutes)} min`:"";
+    const window=validInterval?`${formatTime(f.intervals[0][0])}–${formatTime(f.intervals[0][1])}`:"invalid occupancy interval";
+    const branches=rows.map(r=>{
+      const winner=best&&best.id===r.id;
+      const hard=r.hard.length?`Fail: ${r.hard.join("; ")}`:"Pass: type, span and jetbridge";
+      const time=r.time.length?`Fail: ${r.time.join("; ")}`:"Pass: no booking or outage overlap";
+      const soft=r.safe?`Walk ${fmt(r.costs.walk)} + customs ${fmt(r.costs.premium)} + move ${fmt(r.costs.move)} = ${fmt(r.total)} points`:"Not scored because this gate is unsafe";
+      const state=winner?"Selected":r.safe?"Safe · higher cost":"Rejected";
+      return `<div class="tree-branch"><article class="tree-card ${r.safe?"safe":""} ${winner?"winner":""}"><div class="tree-title"><span class="tree-gate">${esc(r.id)}</span><span class="tree-state">${state}</span></div><div class="tree-step"><strong>1 · Aircraft</strong><br>${esc(hard)}</div><div class="tree-step"><strong>2 · Time</strong><br>${esc(time)}</div><div class="tree-step"><strong>3 · Soft score</strong><br>${esc(soft)}</div></article></div>`;
+    }).join("");
+    const outcome=best?`Choose ${esc(best.id)} · lowest score among ${safeCount} safe gate${safeCount===1?"":"s"}`:"No safe branch · leave the flight unassigned";
+    $('decisionTree').innerHTML=`<div class="tree-root"><strong>Flight ${esc(f.category===0?"Cargo":f.category===1?"Domestic":"International")}${delay}</strong><br><span>Occupancy window ${esc(window)} · ${rows.length} gates to check</span></div><div class="tree-branches">${branches}</div><div class="tree-outcome ${best?"":"none"}">${outcome}</div>`;
+  }
+  function renderTimeline(f,s){
+    const ends=[1440,f.intervals[0][1],...Object.values(s.assignments).flatMap(bs=>bs.flatMap(b=>b.intervals.map(iv=>iv[1]))),...Object.values(s.outages).flatMap(windows=>windows.map(iv=>iv[1]))].filter(Number.isFinite);
+    const horizon=Math.ceil(Math.max(...ends)/360)*360;
+    $('timelineTitle').textContent=`Gate occupancy timeline · 00:00 to ${formatTime(horizon)}`;
+    const ticks=Array.from({length:Math.floor(horizon/360)+1},(_,i)=>`<span>${formatTime(i*360)}</span>`).join("");
+    const start=f.intervals[0][0],end=f.intervals[0][1];
+    $('timeline').innerHTML=`<div class="axis">${ticks}</div>`+Object.entries(s.gates).map(([id])=>{
+      const blocks=[];
+      const add=(iv,label,cls)=>{const a=Math.max(0,Math.min(horizon,iv[0])),b=Math.max(0,Math.min(horizon,iv[1]));if(b<=a)return;blocks.push(`<div class="block ${cls}" style="left:${a/horizon*100}%;width:${Math.max(.6,(b-a)/horizon*100)}%" title="${esc(label)} · ${formatTime(iv[0])}–${formatTime(iv[1])}">${esc(label)}</div>`)};
+      add([start,end],"this flight","flight");
+      for(const b of (s.assignments[id]||[]))if(b.flight_id!=="F1")for(const iv of b.intervals)add(iv,b.flight_id,"other");
+      for(const iv of (s.outages[id]||[]))add(iv,"outage","outage");
+      return `<div class="lane"><div class="lane-label">${esc(id)}</div><div class="track" style="--step:${360/horizon*100}%">${blocks.join("")}</div></div>`;
+    }).join("");
+  }
+  function loadScenario(key){
+    active=key;const s=scenarios[key];$('scenario').value=key;
+    $('category').value=s.flight.category;$('wingspan').value=s.flight.wingspan;$('jetbridge').checked=s.flight.jetbridge_required;
+    $('start').value=s.flight.intervals[0][0];$('end').value=s.flight.intervals[0][1];$('delay').value=s.flight.delay_minutes||0;$('now').value=s.flight.current_time;
+    render();
+  }
+  for(const [key,s] of Object.entries(scenarios))$('scenario').add(new Option(s.title,key));
+  $('presets').innerHTML=Object.entries(scenarios).map(([key,s])=>`<button type="button" data-key="${key}">${esc(s.title.split(":")[0])}</button>`).join("");
+  $('scenario').addEventListener('change',e=>loadScenario(e.target.value));
+  $('presets').addEventListener('click',e=>{const key=e.target.dataset.key;if(key)loadScenario(key)});
+  for(const id of ["category","wingspan","jetbridge","start","end","delay","now"])$(id).addEventListener("input",render);
+  loadScenario(active);
+</script>
+</body>
+</html>
