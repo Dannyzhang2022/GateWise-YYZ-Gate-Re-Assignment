@@ -26,7 +26,7 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
     # Imports are inside decide so this package can still be imported while
     # teammates are building their modules. The evaluator can call decide once
     # the agreed helper modules are present.
-    from flight_order import (
+    from person2.flight_order import (
         CARGO,
         DOMESTIC,
         INTERNATIONAL,
@@ -35,7 +35,7 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
         order_waiting_flights,
     )
     from person3.gate_choice import choose_gate
-    from disruption_repair import repair_changed_flights
+    from person4.disruption_repair import repair_changed_flights
 
     assignments: list[tuple[str, str]] = []
     reassignments: list[tuple[str, str]] = []

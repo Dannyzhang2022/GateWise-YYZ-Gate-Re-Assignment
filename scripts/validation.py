@@ -9,42 +9,42 @@ valid_aircraft_types = ["73G", "321", "789", "76F"]
 
 def validate_static_info_json(filename):
     valid = True
-    static_info = json.load(open("./" + filename))
+    with open(filename, "r", encoding="utf-8") as f:
+        static_info = json.load(f)
 
     # Validate gates
-    for gate_id, gate_info in static_info.get('gates', {}).items():
-        if gate_info['occupied'] not in [0, 1]:
-            print(f"Invalid occupied value: {gate_info['occupied']} for gate_id: {gate_id}")
+    gates = static_info.get("gate_info", static_info.get("gates", {}))
+    for gate_id, gate_info in gates.items():
+        gate_type = gate_info.get("gate_type")
+        if gate_type not in [0, 1, 2]:
+            print(f"Invalid gate_type: {gate_type} for gate_id: {gate_id}")
             valid = False
         
-        if gate_info['gate_type'] not in [0, 1, 2]:
-            print(f"Invalid gate_type: {gate_info['gate_type']} for gate_id: {gate_id}")
+        wingspan = gate_info.get("max_wingspan")
+        if not isinstance(wingspan, (int, float)) or isinstance(wingspan, bool) or wingspan <= 0:
+            print(f"Invalid max_wingspan: {wingspan} for gate_id: {gate_id}")
             valid = False
         
-        if not isinstance(gate_info['max_wingspan'], (int, float)) or gate_info['max_wingspan'] <= 0:
-            print(f"Invalid max_wingspan: {gate_info['max_wingspan']} for gate_id: {gate_id}")
+        distance = gate_info.get("dist")
+        if not isinstance(distance, int) or isinstance(distance, bool) or distance < -1:
+            print(f"Invalid dist: {distance} for gate_id: {gate_id}")
             valid = False
         
-        if not isinstance(gate_info['dist'], int) or gate_info['dist'] < -1:
-            print(f"Invalid dist: {gate_info['dist']} for gate_id: {gate_id}")
-            valid = False
-        
-        if gate_info['jetbridge'] not in [0, 1]:
-            print(f"Invalid jetbridge value: {gate_info['jetbridge']} for gate_id: {gate_id}")
+        jetbridge = gate_info.get("jetbridge")
+        if jetbridge not in [0, 1, False, True]:
+            print(f"Invalid jetbridge value: {jetbridge} for gate_id: {gate_id}")
             valid = False
     
     # Validate aircraft_info
     for aircraft_id, aircraft_info in static_info.get('aircraft_info', {}).items():
-        if not isinstance(aircraft_info['wingspan'], (int, float)) or aircraft_info['wingspan'] <= 0:
-            print(f"Invalid wingspan: {aircraft_info['wingspan']} for aircraft_id: {aircraft_id}")
+        wingspan = aircraft_info.get("wingspan")
+        if not isinstance(wingspan, (int, float)) or isinstance(wingspan, bool) or wingspan <= 0:
+            print(f"Invalid wingspan: {wingspan} for aircraft_id: {aircraft_id}")
             valid = False
         
-        if aircraft_info['aircraft_type'] not in [0, 1, 2]:
-            print(f"Invalid aircraft_type: {aircraft_info['aircraft_type']} for aircraft_id: {aircraft_id}")
-            valid = False
-        
-        if aircraft_info['jetbridge_required'] not in [0, 1]:
-            print(f"Invalid jetbridge_required value: {aircraft_info['jetbridge_required']} for aircraft_id: {aircraft_id}")
+        jetbridge_required = aircraft_info.get("jetbridge_required")
+        if jetbridge_required not in [0, 1, False, True]:
+            print(f"Invalid jetbridge_required value: {jetbridge_required} for aircraft_id: {aircraft_id}")
             valid = False
 
     if valid: 
@@ -56,7 +56,8 @@ def validate_static_info_json(filename):
 
 def validate_flight_schedule_json(filename):
     valid = True
-    flight_schedule = json.load(open("./" + filename))
+    with open(filename, "r", encoding="utf-8") as f:
+        flight_schedule = json.load(f)
 
     for time, flightMessages in flight_schedule.items():
         if not isinstance(time, str):
