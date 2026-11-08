@@ -1,131 +1,103 @@
-﻿"""Person 1: coordinate flight ordering, disruption repair, and gate choice."""
+﻿"""Person 1: coordinate joint gate planning and disruption recovery."""
 
 from copy import deepcopy
 from typing import Any
 
+from gms.config import WEIGHTS
+
+
+def _heuristic_cost(actions, observation):
+    """Approximate the evaluator's soft score for a candidate action list."""
+    gates = observation.get("gates", {})
+    flights = {}
+    flights.update(observation.get("assigned_flights", {}))
+    flights.update(observation.get("waiting_flights", {}))
+    changed = observation.get("changed_flights", {})
+    current_time = observation.get("time")
+
+    assignments = {}
+    for flight_id, gate_id in actions.get("assignments", []):
+        assignments[flight_id] = gate_id
+    for flight_id, gate_id in actions.get("reassignments", []):
+        assignments[flight_id] = gate_id
+
+    total = 0.0
+    for flight_id, gate_id in assignments.items():
+        flight = flights.get(flight_id, {})
+        gate = gates.get(gate_id)
+        if gate is None:
+            continue
+        total += gate.get("dist", 0) * WEIGHTS["walking_distance_per_m"]
+        if flight.get("category") == 1 and gate.get("gate_type") == 2:
+            total += WEIGHTS["domestic_at_intl_gate"]
+        current_gate = flight.get("gate_id")
+        if current_gate is not None and gate_id != current_gate:
+            starts = [iv[0] for iv in flight.get("intervals", []) if len(iv) == 2]
+            arrived = (
+                current_time is not None and starts and min(starts) <= current_time
+            )
+            if arrived:
+                total += WEIGHTS["reassignment_after_arrival"]
+            elif flight_id not in changed:
+                total += WEIGHTS["reassignment"]
+
+    # Unassigned flight penalties
+    for fid, flight in flights.items():
+        if fid in assignments:
+            continue
+        if flight.get("priority"):
+            total += WEIGHTS["unassigned_emergency"]
+        else:
+            total += WEIGHTS["unassigned_flight"]
+
+    return total
+
 
 def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
-    """Plan safe gate assignments for one evaluator tick.
-
-    Team module contracts used here:
-      flight_order:
-        compatible(flight, gate) -> bool
-        count_compatible_gates(flight, gates) -> int
-        order_waiting_flights(waiting_flights, compatible_counts) -> list[str]
-        CARGO, DOMESTIC, INTERNATIONAL
-      gate_choice:
-        choose_gate(flight_id, flight, gates, gate_assignments, gate_outages,
-                    exclude_flight_id=None, skip_gate_id=None) -> str | None
-      disruption_repair:
-        repair_changed_flights(changed_flights, gates, gate_assignments,
-                               gate_outages) -> (reassignments, updated_bookings)
-
-    The helper modules are kept separate so this function only coordinates
-    their decisions and maintains a same-tick local booking plan.
-    """
-    # Imports are inside decide so this package can still be imported while
-    # teammates are building their modules. The evaluator can call decide once
-    # the agreed helper modules are present.
-    from person2.flight_order import (
-        CARGO,
-        DOMESTIC,
-        INTERNATIONAL,
-        compatible,
-        count_usable_gates,
-        order_waiting_flights,
-    )
-    from person3.gate_choice import choose_gate
-    from person4.disruption_repair import repair_changed_flights
-
-    assignments: list[tuple[str, str]] = []
-    reassignments: list[tuple[str, str]] = []
+    """Choose the lower-cost plan between the coordinated optimizer and the
+    stable best-fit fallback."""
+    from person1.plan_optimizer import plan_joint_assignments
+    from solution_bestfit import decide as bestfit_decide
 
     gates = observation.get("gates", {})
-    waiting_flights = observation.get("waiting_flights", {})
-    changed_flights = observation.get("changed_flights", {})
-    gate_outages = deepcopy(observation.get("gate_outages", {}))
-    local_bookings = deepcopy(observation.get("gate_assignments", {}))
+    outages = deepcopy(observation.get("gate_outages", {}))
+    bookings = deepcopy(observation.get("gate_assignments", {}))
+    waiting = deepcopy(observation.get("waiting_flights", {}))
+    assigned = deepcopy(observation.get("assigned_flights", {}))
+    changed = observation.get("changed_flights", {})
 
-    # Keep an empty booking list for every known gate so the placement helper
-    # can safely add bookings to gates that were empty in the observation.
-    for gate_id in gates:
-        local_bookings.setdefault(gate_id, [])
+    for flight_id, change in changed.items():
+        current = assigned.setdefault(flight_id, {})
+        current.update(deepcopy(change.get("new", {})))
+        current["gate_id"] = change.get("gate_id", current.get("gate_id"))
 
-    # 1. Repair assigned flights affected by updates or outages before placing
-    #    new flights. The helper returns a local booking plan that includes its
-    #    repairs, so subsequent gate choices see those moves.
-    repair_result = repair_changed_flights(
-        changed_flights,
+    candidate_ids = set(assigned) | set(waiting)
+    from person4.disruption_repair import assess_changed_flights
+    disruption_status = assess_changed_flights(
+        changed,
         gates,
-        local_bookings,
-        gate_outages,
+        bookings,
+        outages,
+        planning_flight_ids=candidate_ids,
     )
-    if repair_result is not None:
-        repair_actions, repaired_bookings = repair_result
-        if repaired_bookings is not None:
-            local_bookings = repaired_bookings
-        if repair_actions:
-            reassignments.extend(
-                (flight_id, gate_id) for flight_id, gate_id in repair_actions
-            )
 
-    # Ensure the repaired plan still has entries for every gate.
-    for gate_id in gates:
-        local_bookings.setdefault(gate_id, [])
+    team_actions = plan_joint_assignments(
+        gates=gates,
+        outages=outages,
+        bookings=bookings,
+        assigned_flights=assigned,
+        waiting_flights=waiting,
+        changed_flights=changed,
+        disruption_status=disruption_status,
+        current_time=observation.get("time"),
+    )
+    bestfit_actions = bestfit_decide(observation)
 
-    # 2. Order waiting flights by emergency and their currently usable gate
-    #    count. Recalculate after each placement so a flight that just lost an
-    #    option doesn't retain a stale place in the queue.
-    valid_categories = {CARGO, DOMESTIC, INTERNATIONAL}
-    remaining = dict(waiting_flights)
-
-    # 3. Select and reserve one gate at a time. Updating local bookings after
-    #    each choice prevents overlaps and feeds the next live scarcity count.
-    while remaining:
-        usable_counts: dict[str, int] = {}
-        for candidate_id, candidate in remaining.items():
-            if candidate.get("category") not in valid_categories:
-                # Unknown category codes cannot be safely placed.
-                usable_counts[candidate_id] = 0
-            else:
-                usable_counts[candidate_id] = count_usable_gates(
-                    candidate,
-                    gates,
-                    local_bookings,
-                    gate_outages,
-                    flight_id=candidate_id,
-                )
-
-        flight_id = order_waiting_flights(remaining, usable_counts)[0]
-        flight = remaining.pop(flight_id)
-        if usable_counts[flight_id] <= 0:
-            continue
-
-        gate_id = choose_gate(
-            flight_id,
-            flight,
-            gates,
-            local_bookings,
-            gate_outages,
-        )
-        if gate_id is None or gate_id not in gates:
-            continue
-
-        # Defense-in-depth using the shared compatibility rule; do not repeat
-        # or reimplement the gate-type, wingspan, or jetbridge rules here.
-        if not compatible(flight, gates[gate_id]):
-            continue
-
-        assignments.append((flight_id, gate_id))
-        local_bookings.setdefault(gate_id, []).append(
-            {
-                "flight_id": flight_id,
-                "intervals": deepcopy(flight.get("intervals", [])),
-            }
-        )
-
-    return {
-        "assignments": assignments,
-        "reassignments": reassignments,
-    }
-
+    # Both planners account for occupancy and sequence dependent moves. Do not
+    # prune individual reassignments here: a locally optional move may clear a
+    # destination for another flight or be required by an updated booking.
+    bt = _heuristic_cost(team_actions, observation)
+    bb = _heuristic_cost(bestfit_actions, observation)
+    if bb < bt:
+        return bestfit_actions
+    return team_actions

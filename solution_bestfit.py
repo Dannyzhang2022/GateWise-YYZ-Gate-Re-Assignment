@@ -10,6 +10,11 @@ from flight_order import compatible, count_compatible_gates, order_waiting_fligh
 from gms.config import DOMESTIC, INTERNATIONAL, WEIGHTS
 
 
+# Exact assignment grows factorially with the wave size. Four flights keeps the
+# branch search small; larger waves use the scarcity-aware greedy path below.
+EXACT_WAVE_LIMIT = 4
+
+
 def _overlap(a, b):
     return a[0] < b[1] and b[0] < a[1]
 
@@ -300,13 +305,13 @@ def decide(observation):
 
     waiting = observation.get("waiting_flights", {})
     now = observation.get("time", 0)
-    if len(waiting) <= 8:
+    if len(waiting) <= EXACT_WAVE_LIMIT:
         plan = _exact_wave_plan(waiting, gates, local, outages, now)
     else:
         plan = _greedy_wave_plan(waiting, gates, local, outages, now)
 
     assignments = list(plan.items())
-    if len(waiting) <= 8:
+    if len(waiting) <= EXACT_WAVE_LIMIT:
         for fid, gid in assignments:
             local.setdefault(gid, []).append(
                 {"flight_id": fid, "intervals": waiting[fid]["intervals"]}

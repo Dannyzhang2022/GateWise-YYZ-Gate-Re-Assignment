@@ -9,6 +9,51 @@ from gms.compat import hard_compatible, is_premium_misuse
 from gms.occupancy import intervals_overlap
 
 
+def assess_changed_flights(
+    changed_flights, gates, gate_assignments, gate_outages,
+    planning_flight_ids=None,
+):
+    """Describe which changed flights can remain at their current gate.
+
+    The joint planner uses this as repair input, then chooses replacements
+    together with new flights. Other flights included in the same plan are
+    ignored here because their final occupancy is checked by that planner.
+    """
+    ignored = set(planning_flight_ids or ()) | set(changed_flights)
+    result = {}
+    for flight_id, change in changed_flights.items():
+        flight = change.get("new", {})
+        gate_id = change.get("gate_id")
+        gate = gates.get(gate_id)
+        reason = None
+        compatible = False
+        if gate is not None:
+            compatible, compatibility_reasons = hard_compatible(
+                flight.get("category"),
+                flight.get("wingspan", 0),
+                flight.get("jetbridge_required", False),
+                gate,
+            )
+            if not compatible:
+                reason = compatibility_reasons
+        else:
+            reason = "current gate is unknown"
+
+        intervals = flight.get("intervals", [])
+        if reason is None and _blocked_by_outage(gate_id, intervals, gate_outages):
+            reason = "current gate has an overlapping outage"
+        if reason is None and _blocked_by_bookings(
+            gate_id, intervals, gate_assignments, ignored_flights=ignored
+        ):
+            reason = "current gate conflicts with a fixed booking"
+        result[flight_id] = {
+            "current_gate": gate_id,
+            "current_gate_safe": reason is None,
+            "reason": reason,
+        }
+    return result
+
+
 def _overlaps_any(intervals, other_intervals):
     return any(
         intervals_overlap(a, b, buffer=0)
