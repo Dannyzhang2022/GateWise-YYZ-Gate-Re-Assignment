@@ -213,6 +213,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
   .badge.ok { background: #1a3326; color: #3fb950; }
   .badge.fail { background: #3a1d22; color: #f85149; }
+  .badge.manual { background: #3a2a12; color: #f0b34a; }
   .wrap { padding: 18px 22px 40px; }
   .toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
              background: #161b22; border: 1px solid #232a33; border-radius: 10px;
@@ -235,11 +236,16 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .runbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
             background: #161b22; border: 1px solid #2ea043; border-radius: 10px;
             padding: 12px 16px; margin-bottom: 16px; }
-  .tabs { display: flex; gap: 8px; margin: 0 0 14px; border-bottom: 1px solid #30363d; }
+  .tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin: 0 0 14px; border-bottom: 1px solid #30363d; }
   .tab-button { border: 1px solid #30363d; border-bottom: 0; border-radius: 8px 8px 0 0;
                 padding: 9px 16px; background: #161b22; color: #8b949e; font-weight: 700;
                 letter-spacing: .04em; cursor: pointer; }
   .tab-button.active { background: #238636; border-color: #2ea043; color: #fff; }
+  .manual-override-button { margin-left: auto; align-self: center; padding: 8px 12px;
+                            border: 1px solid #9e6a03; border-radius: 7px; background: #2b2111;
+                            color: #f0b34a; font-size: 11px; font-weight: 800; letter-spacing: .04em; cursor: pointer; }
+  .manual-override-button:hover, .manual-override-button.active { background: #5a3b0b; color: #fff; }
+  .manual-override-button:disabled { opacity: .45; cursor: not-allowed; }
   .tab-pane { display: none; }
   .tab-pane.active { display: block; }
   .flight-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; }
@@ -368,9 +374,22 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .sim-gate-label { transform: rotate(-90deg); white-space: nowrap; }
   .sim-gate.occupied { border-color: #f0f6fc; box-shadow: 0 0 8px rgba(240,246,252,.35); }
   .sim-gate.down { border-color: #f85149; color: #ffb4ad; background: #35191d; }
+  .sim-gate.manual-available { border-color: #3fb950; background: #173522; color: #b7f0c2; cursor: copy;
+                               box-shadow: 0 0 10px rgba(63,185,80,.5); }
+  .sim-gate.manual-current { border-color: #58a6ff; background: #172f49; color: #d2e7ff; }
+  .sim-gate.manual-blocked { opacity: .55; }
+  .sim-gate.manual-drop-target { outline: 3px solid #fff; outline-offset: 3px; }
   .sim-plane { position: absolute; z-index: 5; transform: translate(-50%,-50%); min-width: 78px;
                display: flex; flex-direction: column; align-items: center; pointer-events: auto;
                transition: left .22s linear, top .22s linear; }
+  .sim-plane.manual-draggable { cursor: grab; }
+  .sim-plane.manual-draggable:active { cursor: grabbing; }
+  .sim-plane.manual-dragging { opacity: .4; }
+  .manual-override-notice { margin: 0 0 14px; padding: 10px 13px; border: 1px solid #9e6a03;
+                            border-left: 4px solid #f0b34a; border-radius: 8px; background: #241d12;
+                            color: #f0d9a5; font-size: 12px; }
+  .manual-override-notice strong { color: #f0b34a; }
+  .manual-override-feedback { display: block; margin-top: 4px; color: #c9d1d9; }
   .sim-plane-label { max-width: 170px; margin-bottom: 3px; padding: 2px 6px; border-radius: 4px;
                      background: #0d1117; color: #e6edf3; border: 1px solid #303a46;
                      font: 650 11px -apple-system,Segoe UI,Roboto,Arial,sans-serif; white-space: nowrap; }
@@ -416,6 +435,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
     <button class="tab-button" id="boardsTabButton" role="tab" aria-selected="false" aria-controls="boardsTab">DEPARTURES AND ARRIVALS</button>
     <button class="tab-button" id="compareTabButton" role="tab" aria-selected="false" aria-controls="compareTab">COMPARE SOLUTIONS</button>
     <button class="tab-button" id="moreInfoTabButton" role="tab" aria-selected="false" aria-controls="moreInfoTab">MORE INFO</button>
+    <button type="button" id="manualOverrideButton" class="manual-override-button" disabled>MANUAL OVERRIDE</button>
   </div>
 
   <div id="errorBox" class="errorBox"></div>
@@ -468,6 +488,12 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <div class="solution-score-strip" data-score-strip>
     <span class="solution-score-name" data-score-name>Solution: —</span>
     <span class="badge" data-score-result>NOT RUN</span>
+  </div>
+
+  <div id="manualOverrideNotice" class="manual-override-notice" hidden>
+    <strong id="manualOverrideHeading">Manual override.</strong>
+    <span id="manualOverrideInstructions">Playback is stopped. Drag an active airplane onto a green available gate.</span>
+    <span id="manualOverrideFeedback" class="manual-override-feedback" role="status" aria-live="polite"></span>
   </div>
 
   <div class="panel" style="margin-top:16px">
@@ -706,6 +732,8 @@ let clock = 0;
 let playing = false;
 let raf = null, lastTs = null;
 let decTimer = null;
+let manualOverrideMode = false, manualPlanInvalidated = false;
+let draggedFlightId = null, manualDragTargets = new Map(), activeRunController = null;
 
 function pad(n){ return String(n).padStart(2,"0"); }
 function fmt(min){ min = Math.round(min); const d = Math.floor(min/1440), m = ((min%1440)+1440)%1440;
@@ -718,6 +746,8 @@ function clampEnd(e){ return e >= OPEN ? TMAX : e; }
 // ---- load a trace (fresh page-load, or a new Run) --------------------------
 function loadTrace(trace){
   TRACE = trace;
+  manualOverrideMode = false; manualPlanInvalidated = false;
+  draggedFlightId = null; manualDragTargets.clear();
   COMPARE_TICK_A = -1; COMPARE_TICK_B = -1;
   TMIN = trace.time_min; TMAX = trace.time_max + MOVE_MINUTES; SPAN = Math.max(1, TMAX - TMIN);
   OPEN = trace.outage_open_end;
@@ -729,6 +759,7 @@ function loadTrace(trace){
   document.getElementById("playDecCompare").innerHTML = "&#9654; Decisions";
   document.getElementById("chart").innerHTML = "";
   buildStatic();
+  updateManualOverrideUI();
   renderPlan();
   setClockTime(TMIN);
 }
@@ -803,6 +834,220 @@ function buildStatic(){
   buildSimulation();
 }
 
+function manualCategoryCode(value){
+  if(value == null || typeof value === "boolean") return null;
+  if(typeof value === "string"){
+    const name = value.trim().toUpperCase();
+    if(name === "CARGO") return 0;
+    if(name === "DOMESTIC") return 1;
+    if(name === "INTERNATIONAL") return 2;
+  }
+  const code = Number(value);
+  return Number.isInteger(code) && code >= 0 && code <= 2 ? code : null;
+}
+
+function findFlightBooking(plan, flightId){
+  for(const [gateId, bookings] of Object.entries(plan || {})){
+    const index = (bookings || []).findIndex(booking => booking.flight_id === flightId);
+    if(index >= 0) return {gateId, bookings, index, booking: bookings[index]};
+  }
+  return null;
+}
+
+function intervalsOverlap(left, right){
+  return left[0] < right[1] && right[0] < left[1];
+}
+
+function manualMoveValidity(flightId, targetGateId){
+  if(!TRACE) return {ok:false, reason:"Run a solution before editing gates."};
+  const currentTick = TRACE.ticks[planIdx];
+  const current = findFlightBooking(currentTick.plan, flightId);
+  if(!current) return {ok:false, reason:"This airplane has no active gate assignment."};
+  if(current.gateId === targetGateId) return {ok:false, reason:"This is already the assigned gate."};
+  const target = TRACE.gates.find(gate => gate.id === targetGateId);
+  if(!target) return {ok:false, reason:"Gate not found."};
+
+  const category = manualCategoryCode(current.booking.category);
+  const gateType = manualCategoryCode(target.type);
+  if(category === null || gateType === null) return {ok:false, reason:"Flight or gate type is unknown."};
+  if(category === 0 && gateType !== 0) return {ok:false, reason:"Cargo flights require a cargo gate."};
+  if(category === 2 && gateType !== 2) return {ok:false, reason:"International flights require an international gate."};
+  if(category === 1 && gateType === 0) return {ok:false, reason:"Domestic passenger flights cannot use a cargo gate."};
+  const wingspan = Number(current.booking.wingspan);
+  const maximumWingspan = Number(target.max_wingspan);
+  if(!Number.isFinite(wingspan) || !Number.isFinite(maximumWingspan) || wingspan > maximumWingspan)
+    return {ok:false, reason:"The aircraft exceeds this gate's wingspan limit."};
+  if(current.booking.jetbridge_required && !target.jetbridge)
+    return {ok:false, reason:"This flight requires a jetbridge."};
+
+  let checked = false;
+  for(let i = planIdx; i < TRACE.ticks.length; i++){
+    const tick = TRACE.ticks[i];
+    const flight = findFlightBooking(tick.plan, flightId);
+    if(!flight) continue;
+    checked = true;
+    const intervals = flight.booking.intervals || [];
+    if(!intervals.length) return {ok:false, reason:"The flight's occupancy interval is missing."};
+    for(const interval of intervals){
+      const closed = ((tick.outages || {})[targetGateId] || []).some(outage =>
+        intervalsOverlap(interval, [outage[0], clampEnd(outage[1])])
+      );
+      if(closed) return {ok:false, reason:"The gate has an outage during this flight's occupancy."};
+      const occupied = ((tick.plan || {})[targetGateId] || []).some(booking =>
+        booking.flight_id !== flightId && (booking.intervals || []).some(other => intervalsOverlap(interval, other))
+      );
+      if(occupied) return {ok:false, reason:"Another flight occupies this gate during the requested interval."};
+    }
+  }
+  return checked ? {ok:true, sourceGateId:current.gateId} : {ok:false, reason:"No scheduled occupancy was found."};
+}
+
+function beginManualDrag(flightId, plane, event){
+  if(!manualOverrideMode){ event.preventDefault(); return; }
+  setPlaying(false);
+  setDecPlay(false);
+  draggedFlightId = flightId;
+  manualDragTargets = new Map();
+  let validTargets = 0;
+  for(const gate of TRACE.gates){
+    const pad = document.querySelector(`.sim-gate[data-gid="${gate.id}"]`);
+    const validation = manualMoveValidity(flightId, gate.id);
+    const isCurrent = validation.sourceGateId === gate.id
+      || findFlightBooking(TRACE.ticks[planIdx].plan, flightId)?.gateId === gate.id;
+    if(validation.ok){ manualDragTargets.set(gate.id, validation); validTargets++; }
+    if(pad){
+      pad.classList.toggle("manual-current", isCurrent);
+      pad.classList.toggle("manual-available", validation.ok);
+      pad.classList.toggle("manual-blocked", !validation.ok && !isCurrent);
+      pad.title = isCurrent ? `${gate.id} · current gate`
+        : validation.ok ? `${gate.id} · available — drop to reassign`
+        : `${gate.id} · unavailable — ${validation.reason}`;
+    }
+  }
+  if(!validTargets){
+    event.preventDefault();
+    setManualFeedback(`No compatible, available gates for ${shortId(flightId)} at this time.`, false);
+    finishManualDrag();
+    return;
+  }
+  plane.classList.add("manual-dragging");
+  if(event.dataTransfer){
+    event.dataTransfer.setData("text/plain", flightId);
+    event.dataTransfer.effectAllowed = "move";
+  }
+  setManualFeedback(`Dragging ${shortId(flightId)}. Green gates are compatible and available.`, true);
+}
+
+function finishManualDrag(){
+  draggedFlightId = null;
+  manualDragTargets.clear();
+  document.querySelectorAll(".sim-gate").forEach(pad => {
+    pad.classList.remove("manual-current", "manual-available", "manual-blocked", "manual-drop-target");
+    pad.title = pad.dataset.baseTitle || pad.title;
+  });
+  document.querySelectorAll(".sim-plane.manual-dragging").forEach(plane => plane.classList.remove("manual-dragging"));
+}
+
+function setManualFeedback(message, success){
+  const feedback = document.getElementById("manualOverrideFeedback");
+  if(!feedback) return;
+  feedback.textContent = message || "";
+  feedback.style.color = success ? "#8ee99d" : "#ffb4ad";
+}
+
+function markManualScoreInvalid(){
+  for(const badge of document.querySelectorAll("[data-score-result]")){
+    badge.className = "badge manual";
+    badge.textContent = "MANUAL · score invalid";
+  }
+  const compareA = document.getElementById("compareCompletionA");
+  if(compareA){ compareA.className = "badge manual"; compareA.textContent = "MANUAL · score invalid"; }
+}
+
+function updateManualOverrideUI(){
+  const button = document.getElementById("manualOverrideButton");
+  if(!button) return;
+  button.disabled = !TRACE;
+  button.classList.toggle("active", manualOverrideMode);
+  button.textContent = manualOverrideMode ? "EXIT MANUAL OVERRIDE"
+    : manualPlanInvalidated ? "EDIT MANUAL PLAN" : "MANUAL OVERRIDE";
+  const controlsLocked = !TRACE || manualOverrideMode || manualPlanInvalidated;
+  for(const id of ["play", "playMore", "playBoards", "playCompare", "playDec", "playDecMore", "playDecBoards", "playDecCompare"]){
+    const control = document.getElementById(id);
+    if(control) control.disabled = controlsLocked;
+  }
+  const notice = document.getElementById("manualOverrideNotice");
+  if(notice){
+    notice.hidden = !manualOverrideMode && !manualPlanInvalidated;
+    document.getElementById("manualOverrideHeading").textContent = manualOverrideMode
+      ? "Manual override active." : "Manual plan retained.";
+    document.getElementById("manualOverrideInstructions").textContent = manualOverrideMode
+      ? "Playback is stopped. Scrub to an active airplane, then drag it onto a green available gate. Changes are local to this dashboard."
+      : "The manual gate changes remain in this preview. Automated playback and evaluator scoring are invalid until you run a solution again.";
+  }
+}
+
+function toggleManualOverride(){
+  if(!TRACE){ showError("Run a solution before entering manual override."); return; }
+  showError(null);
+  if(manualOverrideMode){
+    manualOverrideMode = false;
+    finishManualDrag();
+    setManualFeedback(manualPlanInvalidated
+      ? "Manual gate changes are retained; run a solution again to restore automated playback."
+      : "Manual editing ended. The original solution is unchanged.", true);
+  } else {
+    cancelActiveRunRequest();
+    setPlaying(false);
+    setDecPlay(false);
+    manualOverrideMode = true;
+    document.getElementById("visualTabButton").click();
+    setManualFeedback("Simulation stopped. Drag an active airplane to a green gate.", true);
+  }
+  updateManualOverrideUI();
+  renderSimulation(TRACE.ticks[planIdx], clock);
+}
+
+function dropManualFlight(event, targetGateId){
+  if(!manualOverrideMode) return;
+  const flightId = draggedFlightId || (event.dataTransfer && event.dataTransfer.getData("text/plain"));
+  if(!flightId) return;
+  event.preventDefault();
+  const validation = manualMoveValidity(flightId, targetGateId);
+  finishManualDrag();
+  if(!validation.ok){ setManualFeedback(validation.reason, false); return; }
+  const currentTick = TRACE.ticks[planIdx];
+  const sourceGateId = validation.sourceGateId;
+  if(sourceGateId === targetGateId) return;
+
+  for(let i = planIdx; i < TRACE.ticks.length; i++){
+    const tick = TRACE.ticks[i];
+    const assignment = findFlightBooking(tick.plan, flightId);
+    if(!assignment || assignment.gateId === targetGateId) continue;
+    assignment.bookings.splice(assignment.index, 1);
+    tick.plan[targetGateId] ||= [];
+    tick.plan[targetGateId].push(assignment.booking);
+  }
+  currentTick.decisions ||= {assignments:[], reassignments:[], gate_explanations:[]};
+  for(const key of ["assignments", "reassignments"])
+    currentTick.decisions[key] = (currentTick.decisions[key] || []).filter(([fid]) => fid !== flightId);
+  currentTick.decisions.reassignments.push([flightId, targetGateId]);
+  currentTick.log ||= [];
+  currentTick.log.push(`[REASSIGN] MANUAL OVERRIDE: ${shortId(flightId)} moved from ${sourceGateId} to ${targetGateId}`);
+  currentTick.events ||= [];
+  currentTick.events.push({
+    kind:"SOLUTION", subject:`${shortId(flightId)} moved from ${sourceGateId} to ${targetGateId}`,
+    reason:"Manual operator override; evaluator scoring is no longer valid.",
+  });
+  manualPlanInvalidated = true;
+  cancelActiveRunRequest();
+  markManualScoreInvalid();
+  COMPARE_TICK_A = -1; COMPARE_TICK_B = -1;
+  updateManualOverrideUI();
+  renderPlan();
+  setManualFeedback(`${shortId(flightId)} reassigned from ${sourceGateId} to ${targetGateId}. Automated playback stopped; score invalidated.`, true);
+}
+
 function buildSimulation(){
   const map = document.getElementById("simMap");
   if(!map) return;
@@ -875,6 +1120,15 @@ function buildSimulation(){
     pad.style.left = `${x}%`;
     pad.style.top = `${y}%`;
       pad.title = `${gate.id} · ${TYPE_NAME[type] || "Gate"} · ${gate.max_wingspan}m max · jetbridge ${gate.jetbridge ? "yes" : "no"}`;
+    pad.dataset.baseTitle = pad.title;
+    pad.addEventListener("dragover", event => {
+      if(!manualOverrideMode || !manualDragTargets.get(gate.id)?.ok) return;
+      event.preventDefault();
+      pad.classList.add("manual-drop-target");
+      if(event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+    pad.addEventListener("dragleave", () => pad.classList.remove("manual-drop-target"));
+    pad.addEventListener("drop", event => dropManualFlight(event, gate.id));
     map.appendChild(pad);
     simGatePositions[gate.id] = {x, y};
   }
@@ -967,6 +1221,11 @@ function renderSimulation(tick, t){
       plane.style.top = `${y}%`;
       plane.classList.toggle("bridge", !!booking.jetbridge_required);
       plane.dataset.phase = departing ? "departing" : "arriving";
+      const draggable = manualOverrideMode && !!activeInterval;
+      plane.draggable = draggable;
+      plane.classList.toggle("manual-draggable", draggable);
+      plane.ondragstart = draggable ? event => beginManualDrag(fid, plane, event) : null;
+      plane.ondragend = () => finishManualDrag();
       plane.querySelectorAll(".sim-plane-shape").forEach(shape => shape.style.fill = color);
       plane.querySelector(".sim-plane-svg").style.width = `${span}px`;
       plane.querySelector(".sim-plane-priority").hidden = !booking.diversion;
@@ -1469,6 +1728,10 @@ function step(ts){
   if(playing) raf = requestAnimationFrame(step);
 }
 function setPlaying(on){
+  if(on && (manualOverrideMode || manualPlanInvalidated)){
+    setManualFeedback("Automated playback is stopped for manual gate changes. Run a solution again to resume.", false);
+    return;
+  }
   playing = on; lastTs = null;
   document.getElementById("play").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   document.getElementById("playMore").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
@@ -1486,6 +1749,10 @@ function setTick(i){
 }
 
 function setDecPlay(on){
+  if(on && (manualOverrideMode || manualPlanInvalidated)){
+    setManualFeedback("Automated decision playback is stopped for manual gate changes. Run a solution again to resume.", false);
+    return;
+  }
   const btn = document.getElementById("playDec");
   if(decTimer){ clearInterval(decTimer); decTimer = null; }
   if(on){
@@ -1528,6 +1795,7 @@ for(const button of document.querySelectorAll(".tab-button")){
     if(button.id === "compareTabButton") moveComparisonPlayheads(clock);
   };
 }
+document.getElementById("manualOverrideButton").onclick = toggleManualOverride;
 
 for(const select of document.querySelectorAll(".scenario-select, .solution-select")){
   select.onchange = () => document.querySelectorAll(`.${select.classList.contains("scenario-select") ? "scenario-select" : "solution-select"}`)
@@ -1541,14 +1809,36 @@ function showError(msg){
   box.style.display = "block"; box.textContent = msg;
 }
 
+function cancelActiveRunRequest(){
+  if(!activeRunController) return;
+  const controller = activeRunController;
+  activeRunController = null;
+  controller.abort();
+  document.querySelectorAll(".run-button").forEach(button => button.disabled = false);
+  document.querySelectorAll(".run-status").forEach(status => status.textContent = "");
+  const compareButton = document.getElementById("compareBtn");
+  if(compareButton) compareButton.disabled = false;
+  const compareStatus = document.getElementById("compareStatus");
+  if(compareStatus) compareStatus.textContent = "";
+  for(const id of ["compareCompletionA", "compareCompletionB"]){
+    const badge = document.getElementById(id);
+    if(badge && badge.textContent === "RUNNING") badge.textContent = "STOPPED";
+  }
+}
+
 function runNow(){
+  if(manualOverrideMode){ manualOverrideMode = false; finishManualDrag(); updateManualOverrideUI(); }
+  cancelActiveRunRequest();
+  setPlaying(false); setDecPlay(false);
   const activePane = document.querySelector(".tab-pane.active") || document.getElementById("visualTab");
   const scenario = activePane.querySelector(".scenario-select").value;
   const solution = activePane.querySelector(".solution-select").value;
+  const controller = new AbortController();
+  activeRunController = controller;
   document.querySelectorAll(".run-button").forEach(btn => btn.disabled = true);
   document.querySelectorAll(".run-status").forEach(status => status.textContent = "running…");
   showError(null);
-  fetch(`/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`)
+  fetch(`/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`, {signal:controller.signal})
     .then(r => r.json())
     .then(data => {
       if(data.error){ showError(data.error); document.getElementById("chartPlaceholder").style.display=""; return; }
@@ -1562,10 +1852,13 @@ function runNow(){
       TRACE_COMPARE_B = null;
       loadTrace(data.trace);
     })
-    .catch(err => showError(String(err)))
+    .catch(err => { if(err.name !== "AbortError") showError(String(err)); })
     .finally(() => {
-      document.querySelectorAll(".run-button").forEach(btn => btn.disabled = false);
-      document.querySelectorAll(".run-status").forEach(status => status.textContent = "");
+      if(activeRunController === controller){
+        activeRunController = null;
+        document.querySelectorAll(".run-button").forEach(btn => btn.disabled = false);
+        document.querySelectorAll(".run-status").forEach(status => status.textContent = "");
+      }
     });
 }
 
@@ -1585,6 +1878,9 @@ function setCompareCompletion(side, solution, data, phase){
 }
 
 function runComparison(){
+  if(manualOverrideMode){ manualOverrideMode = false; finishManualDrag(); updateManualOverrideUI(); }
+  cancelActiveRunRequest();
+  setPlaying(false); setDecPlay(false);
   const pane = document.getElementById("compareTab");
   const scenario = pane.querySelector(".scenario-select").value;
   const solutionA = pane.querySelector(".compare-solution-a").value;
@@ -1598,8 +1894,11 @@ function runComparison(){
   setCompareCompletion("A", solutionA, null, "RUNNING");
   setCompareCompletion("B", solutionB, null, "RUNNING");
   button.disabled = true; status.textContent = "running both solutions…"; showError(null);
+  const controller = new AbortController();
+  activeRunController = controller;
   const fetchTrace = solution => fetch(
-    `/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`
+    `/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`,
+    {signal:controller.signal}
   ).then(response => response.json());
   Promise.all([fetchTrace(solutionA), fetchTrace(solutionB)])
     .then(([dataA, dataB]) => {
@@ -1618,11 +1917,19 @@ function runComparison(){
       loadTrace(dataA.trace);
     })
     .catch(error => {
-      setCompareCompletion("A", solutionA, {error});
-      setCompareCompletion("B", solutionB, {error});
-      showError(String(error));
+      if(error.name !== "AbortError"){
+        setCompareCompletion("A", solutionA, {error});
+        setCompareCompletion("B", solutionB, {error});
+        showError(String(error));
+      }
     })
-    .finally(() => { button.disabled = false; status.textContent = ""; });
+    .finally(() => {
+      if(activeRunController === controller){
+        activeRunController = null;
+        button.disabled = false;
+        status.textContent = "";
+      }
+    });
 }
 
 if(SERVER_MODE){
