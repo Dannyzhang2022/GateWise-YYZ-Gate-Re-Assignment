@@ -205,7 +205,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
   * { box-sizing: border-box; }
   body { margin: 0; background: #0e1116; color: #e6edf3;
          font: 14px/1.45 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-  header { padding: 16px 22px; border-bottom: 1px solid #232a33;
+  header { position: sticky; top: 0; z-index: 1000; background: #0e1116;
+           padding: 16px 22px; border-bottom: 1px solid #232a33;
            display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
   header h1 { font-size: 18px; margin: 0; font-weight: 650; }
   header .sub { color: #8b949e; font-size: 13px; }
@@ -234,6 +235,13 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .runbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
             background: #161b22; border: 1px solid #2ea043; border-radius: 10px;
             padding: 12px 16px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; margin: 0 0 14px; border-bottom: 1px solid #30363d; }
+  .tab-button { border: 1px solid #30363d; border-bottom: 0; border-radius: 8px 8px 0 0;
+                padding: 9px 16px; background: #161b22; color: #8b949e; font-weight: 700;
+                letter-spacing: .04em; cursor: pointer; }
+  .tab-button.active { background: #238636; border-color: #2ea043; color: #fff; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
   .runbar label { font-size: 12px; color: #8b949e; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
   .errorBox { display: none; background: #2a1216; border: 1px solid #f85149; color: #ffb4ad;
               border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px;
@@ -310,7 +318,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .airport-footprint .small-label { fill: #8b949e; font-size: 10px; letter-spacing: .1px; }
   .airport-footprint .runway-label { fill: #c9d1d9; font-size: 12px; font-weight: 700; letter-spacing: .1px; }
   .airport-footprint .terminal-label, .airport-footprint .runway-label { text-anchor: middle; }
-  .sim-gate { position: absolute; transform: translate(-50%,-50%) rotate(90deg); width: 54px; height: 25px;
+  .sim-gate { position: absolute; transform: translate(-50%,-50%) rotate(90deg); width: 38px; height: 24px;
               border: 1px solid #44515f; border-radius: 5px; background: #202833; color: #c9d1d9;
               display: grid; place-items: center; font: 650 12px -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
   .sim-gate-label { transform: rotate(-90deg); white-space: nowrap; }
@@ -351,20 +359,26 @@ _TEMPLATE = r"""<!DOCTYPE html>
 </header>
 
 <div class="wrap">
+  <div class="tabs" role="tablist" aria-label="Dashboard sections">
+    <button class="tab-button active" id="visualTabButton" role="tab" aria-selected="true" aria-controls="visualTab">VISUAL SIMULATION</button>
+    <button class="tab-button" id="moreInfoTabButton" role="tab" aria-selected="false" aria-controls="moreInfoTab">MORE INFO</button>
+  </div>
+
+  <div id="errorBox" class="errorBox"></div>
+
+  <section id="visualTab" class="tab-pane active" role="tabpanel" aria-labelledby="visualTabButton">
   <div id="runbar" class="runbar" style="display:none">
     <div class="group">
       <label>Scenario</label>
-      <select id="scenarioSelect"></select>
+      <select id="scenarioSelect" class="scenario-select"></select>
     </div>
     <div class="group">
       <label>Solution</label>
-      <select id="solutionSelect"></select>
+      <select id="solutionSelect" class="solution-select"></select>
     </div>
     <button id="runBtn" class="primary">&#9654; Run</button>
     <span class="muted" id="runStatus"></span>
   </div>
-
-  <div id="errorBox" class="errorBox"></div>
 
   <div class="toolbar">
     <div class="group">
@@ -404,8 +418,56 @@ _TEMPLATE = r"""<!DOCTYPE html>
     <div class="sim-shell"><div class="sim-map" id="simMap"></div></div>
   </div>
 
-  <div class="chart" id="chart"><div class="placeholder" id="chartPlaceholder">Pick a scenario and press Run.</div></div>
+  <div class="panel" style="margin-top:16px">
+    <h3>Disruption &amp; response timeline</h3>
+    <div class="scroll" id="disruptionLog" style="max-height: 260px"></div>
+  </div>
+  </section>
 
+  <section id="moreInfoTab" class="tab-pane" role="tabpanel" aria-labelledby="moreInfoTabButton">
+  <div id="runbarMore" class="runbar" style="display:none">
+    <div class="group">
+      <label>Scenario</label>
+      <select id="scenarioSelectMore" class="scenario-select"></select>
+    </div>
+    <div class="group">
+      <label>Solution</label>
+      <select id="solutionSelectMore" class="solution-select"></select>
+    </div>
+    <button id="runBtnMore" class="primary">&#9654; Run</button>
+    <span class="muted" id="runStatusMore"></span>
+  </div>
+
+  <div class="toolbar">
+    <div class="group">
+      <button id="playMore" class="primary">&#9654; Play</button>
+      <button id="resetMore">&#8634; Reset</button>
+      <span class="clock" id="clockMore">--:--</span>
+    </div>
+    <div class="group" style="flex:1; min-width:240px;">
+      <span class="muted">clock</span>
+      <input type="range" id="scrubMore" min="0" max="1000" value="0" style="flex:1;">
+    </div>
+    <div class="group">
+      <span class="muted">speed</span>
+      <select id="speedMore">
+        <option value="4">0.1x</option><option value="10">0.25x</option>
+        <option value="20">0.5x</option><option value="40" selected>1x</option>
+        <option value="80">2x</option><option value="160">4x</option>
+      </select>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <span class="muted">plan&nbsp;@</span>
+      <button id="tprevMore">&#9664;</button>
+      <span class="clock" id="tickLabelMore" style="font-size:14px; min-width:90px; text-align:center;"></span>
+      <button id="tnextMore">&#9654;</button>
+      <button id="playDecMore" class="primary">&#9654; Decisions</button>
+    </div>
+  </div>
+
+  <div id="banner" class="banner" style="display:none"></div>
+  <div class="chart" id="chart"><div class="placeholder" id="chartPlaceholder">Pick a scenario and press Run.</div></div>
   <div class="legend" id="legend"></div>
 
   <div class="panels">
@@ -421,11 +483,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <h3>Gate status at <span id="clock2">--:--</span></h3>
       <div class="scroll" id="status"></div>
     </div>
-    <div class="panel" style="grid-column: 1 / -1">
-      <h3>Disruption &amp; response timeline</h3>
-      <div class="scroll" id="disruptionLog" style="max-height: 200px"></div>
-    </div>
   </div>
+  </section>
 </div>
 
 <script>
@@ -462,6 +521,7 @@ function loadTrace(trace){
   planIdx = 0; clock = TMIN; playing = false;
   if(decTimer){ clearInterval(decTimer); decTimer = null; }
   document.getElementById("playDec").innerHTML = "&#9654; Decisions";
+  document.getElementById("playDecMore").innerHTML = "&#9654; Decisions";
   document.getElementById("chart").innerHTML = "";
   buildStatic();
   renderPlan();
@@ -544,24 +604,28 @@ function buildSimulation(){
     <path class="pier" d="M355 460 H405 V660 H355 Z"/>
     <path class="building" d="M235 280 Q215 280 205 305 V430 Q215 460 245 460 H510 Q545 460 555 430 V310 Q545 280 510 280 Z"/>
     <!-- Terminal 2: enlarged international terminal with one pier per gate. -->
+    <g transform="translate(27.5 0)">
     <path class="pier" d="M625 75 H675 V255 H625 Z"/>
     <path class="pier" d="M925 75 H975 V255 H925 Z"/>
     <path class="pier" d="M625 515 H675 V695 H625 Z"/>
     <path class="pier" d="M925 515 H975 V695 H925 Z"/>
     <path class="building" d="M600 255 Q570 265 570 300 V470 Q580 515 615 515 H1010 Q1045 510 1055 475 V300 Q1045 255 1010 255 Z"/>
+    </g>
     <!-- Terminal 3 is compact and has only its two cargo-gate piers. -->
+    <g transform="translate(5 0)">
     <path class="pier" d="M1145 170 H1195 V320 H1145 Z"/>
     <path class="pier" d="M1240 440 H1290 V590 H1240 Z"/>
     <path class="building" d="M1135 320 Q1110 330 1110 355 V410 Q1115 440 1145 440 H1300 Q1320 435 1320 410 V355 Q1315 320 1290 320 Z"/>
+    </g>
 
     <text class="runway-label" x="107" y="318">ARRIVALS</text>
     <text class="runway-label" x="1392" y="318">DEPARTURES</text>
-    <text class="terminal-label" x="380" y="365">TERMINAL 1</text>
+    <text class="terminal-label" x="380" y="365">DOMESTIC</text>
     <text class="terminal-label" x="380" y="390">DEPARTURES</text>
-    <text class="terminal-label" x="812" y="365">TERMINAL 2</text>
-    <text class="terminal-label" x="812" y="390">INTERNATIONAL</text>
-    <text class="terminal-label" x="1215" y="365">TERMINAL 3</text>
-    <text class="terminal-label" x="1215" y="390">CARGO</text>`;
+    <text class="terminal-label" x="840" y="365">TERMINAL 2</text>
+    <text class="terminal-label" x="840" y="390">INTERNATIONAL</text>
+    <text class="terminal-label" x="1220" y="365">TERMINAL 3</text>
+    <text class="terminal-label" x="1220" y="390">CARGO</text>`;
   map.appendChild(footprint);
 
   // This exercise has synthetic gate IDs rather than real Pearson gate
@@ -570,8 +634,8 @@ function buildSimulation(){
     // Gate markers sit on their drawn terminal piers, perpendicular to the
     // terminal buildings, and are grouped by the terminal serving each type.
     D1: {x:17.3,y:24.4}, D2: {x:32.7,y:24.4}, D3: {x:25.3,y:70.5},
-    I1: {x:43.3,y:21.2}, I2: {x:63.3,y:21.2}, I3: {x:43.3,y:77.6}, I4: {x:63.3,y:77.6},
-    C1: {x:78.3,y:31.4}, C2: {x:84.3,y:66},
+    I1: {x:45.2,y:21.2}, I2: {x:65.2,y:21.2}, I3: {x:45.2,y:77.6}, I4: {x:65.2,y:77.6},
+    C1: {x:78.3,y:31.4}, C2: {x:84.7,y:66},
   };
   const fallbackByType = {0: [{x:9,y:79},{x:13,y:85}], 1: [{x:25,y:18}], 2: [{x:76,y:50}]};
   const counters = {0: 0, 1: 0, 2: 0};
@@ -711,6 +775,7 @@ function renderPlan(){
 
   const phase = (planIdx === 0) ? "initial plan @ " : "plan @ ";
   document.getElementById("tickLabel").textContent = phase + tick.time_label;
+  document.getElementById("tickLabelMore").textContent = phase + tick.time_label;
   document.getElementById("tickLabel2").textContent = tick.time_label + (planIdx === 0 ? " (initial plan)" : "");
   for(const tr of document.querySelectorAll("[data-track]")) tr.innerHTML = "";
 
@@ -874,8 +939,10 @@ function renderDisruptionLog(){
 function updateClock(t){
   clock = t;
   document.getElementById("clock").textContent = fmt(t);
+  document.getElementById("clockMore").textContent = fmt(t);
   document.getElementById("clock2").textContent = fmt(t);
   document.getElementById("scrub").value = Math.round(frac(t)*1000);
+  document.getElementById("scrubMore").value = Math.round(frac(t)*1000);
   document.getElementById("playhead").style.left =
     `calc(var(--labelw) + (100% - var(--labelw)) * ${frac(t)})`;
 
@@ -941,6 +1008,7 @@ function step(ts){
 function setPlaying(on){
   playing = on; lastTs = null;
   document.getElementById("play").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
+  document.getElementById("playMore").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   if(on){ if(clock >= TMAX) setClockTime(TMIN); raf = requestAnimationFrame(step); }
   else if(raf){ cancelAnimationFrame(raf); raf = null; }
 }
@@ -965,14 +1033,38 @@ function setDecPlay(on){
   } else {
     btn.innerHTML = "&#9654; Decisions";
   }
+  document.getElementById("playDecMore").innerHTML = btn.innerHTML;
 }
 
-document.getElementById("play").onclick = () => setPlaying(!playing);
-document.getElementById("reset").onclick = () => { setPlaying(false); setClockTime(TMIN); };
-document.getElementById("scrub").oninput = (e) => { setPlaying(false); setClockTime(TMIN + (e.target.value/1000)*SPAN); };
-document.getElementById("tprev").onclick = () => { setDecPlay(false); setTick(planIdx-1); };
-document.getElementById("tnext").onclick = () => { setDecPlay(false); setTick(planIdx+1); };
-document.getElementById("playDec").onclick = () => setDecPlay(!decTimer);
+for(const id of ["play", "playMore"]) document.getElementById(id).onclick = () => setPlaying(!playing);
+for(const id of ["reset", "resetMore"]) document.getElementById(id).onclick = () => { setPlaying(false); setClockTime(TMIN); };
+for(const id of ["scrub", "scrubMore"]) document.getElementById(id).oninput = (e) => {
+  setPlaying(false); setClockTime(TMIN + (e.target.value/1000)*SPAN);
+};
+for(const id of ["speed", "speedMore"]) document.getElementById(id).onchange = (e) => {
+  document.getElementById(id === "speed" ? "speedMore" : "speed").value = e.target.value;
+};
+for(const id of ["tprev", "tprevMore"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx-1); };
+for(const id of ["tnext", "tnextMore"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx+1); };
+for(const id of ["playDec", "playDecMore"]) document.getElementById(id).onclick = () => setDecPlay(!decTimer);
+
+for(const button of document.querySelectorAll(".tab-button")){
+  button.onclick = () => {
+    document.querySelectorAll(".tab-button").forEach(tab => {
+      const active = tab === button;
+      tab.classList.toggle("active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    document.querySelectorAll(".tab-pane").forEach(pane =>
+      pane.classList.toggle("active", pane.id === button.getAttribute("aria-controls"))
+    );
+  };
+}
+
+for(const select of document.querySelectorAll(".scenario-select, .solution-select")){
+  select.onchange = () => document.querySelectorAll(`.${select.classList.contains("scenario-select") ? "scenario-select" : "solution-select"}`)
+    .forEach(other => { if(other !== select) other.value = select.value; });
+}
 
 // ---- server mode: scenario picker + live Run --------------------------------
 function showError(msg){
@@ -982,10 +1074,12 @@ function showError(msg){
 }
 
 function runNow(){
-  const scenario = document.getElementById("scenarioSelect").value;
-  const solution = document.getElementById("solutionSelect").value;
-  const btn = document.getElementById("runBtn"), status = document.getElementById("runStatus");
-  btn.disabled = true; status.textContent = "running…"; showError(null);
+  const activePane = document.querySelector(".tab-pane.active") || document.getElementById("visualTab");
+  const scenario = activePane.querySelector(".scenario-select").value;
+  const solution = activePane.querySelector(".solution-select").value;
+  document.querySelectorAll("#runBtn, #runBtnMore").forEach(btn => btn.disabled = true);
+  document.querySelectorAll("#runStatus, #runStatusMore").forEach(status => status.textContent = "running…");
+  showError(null);
   fetch(`/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`)
     .then(r => r.json())
     .then(data => {
@@ -1000,20 +1094,27 @@ function runNow(){
       loadTrace(data.trace);
     })
     .catch(err => showError(String(err)))
-    .finally(() => { btn.disabled = false; status.textContent = ""; });
+    .finally(() => {
+      document.querySelectorAll("#runBtn, #runBtnMore").forEach(btn => btn.disabled = false);
+      document.querySelectorAll("#runStatus, #runStatusMore").forEach(status => status.textContent = "");
+    });
 }
 
 if(SERVER_MODE){
   document.getElementById("runbar").style.display = "flex";
+  document.getElementById("runbarMore").style.display = "flex";
   document.getElementById("runBtn").onclick = runNow;
+  document.getElementById("runBtnMore").onclick = runNow;
   Promise.all([fetch("/api/scenarios").then(r => r.json()),
                fetch("/api/solutions").then(r => r.json())]).then(([scenarios, solutions]) => {
-    const sel = document.getElementById("scenarioSelect");
-    sel.innerHTML = scenarios.scenarios.map(s => `<option value="${s}">${s}</option>`).join("");
-    const solutionSel = document.getElementById("solutionSelect");
-    solutionSel.innerHTML = solutions.solutions.map(s => `<option value="${s}">${s}</option>`).join("");
-    if(solutions.solutions.includes("solution_scored")) solutionSel.value = "solution_scored";
-    else if(solutions.solutions.includes("solution")) solutionSel.value = "solution";
+    document.querySelectorAll(".scenario-select").forEach(sel => {
+      sel.innerHTML = scenarios.scenarios.map(s => `<option value="${s}">${s}</option>`).join("");
+    });
+    document.querySelectorAll(".solution-select").forEach(sel => {
+      sel.innerHTML = solutions.solutions.map(s => `<option value="${s}">${s}</option>`).join("");
+      if(solutions.solutions.includes("solution_scored")) sel.value = "solution_scored";
+      else if(solutions.solutions.includes("solution")) sel.value = "solution";
+    });
     if(scenarios.scenarios.length && solutions.solutions.length) runNow();
   }).catch(err => showError("Could not load scenario or solution list: " + err));
 } else {

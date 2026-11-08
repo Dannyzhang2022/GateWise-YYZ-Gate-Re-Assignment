@@ -40,7 +40,7 @@ def test_record_mode_returns_a_trace(static_path):
     assert "CONCOURSE" not in _TEMPLATE and "sim-legend" not in _TEMPLATE
     assert "text-anchor: middle" in _TEMPLATE and "runway-threshold" not in _TEMPLATE
     assert 'M55 19 L25 29' in _TEMPLATE and 'M60 2 C55 10' in _TEMPLATE
-    assert ">TERMINAL 1</text>" in _TEMPLATE and ">DEPARTURES</text>" in _TEMPLATE
+    assert ">DOMESTIC</text>" in _TEMPLATE and ">DEPARTURES</text>" in _TEMPLATE
     assert ">TERMINAL 2</text>" in _TEMPLATE
     assert ">TERMINAL 3</text>" in _TEMPLATE
     assert ">INTERNATIONAL</text>" in _TEMPLATE
@@ -53,6 +53,24 @@ def test_record_mode_returns_a_trace(static_path):
     assert 'p[0]+" "+p[1]' in _TEMPLATE
     assert 'Bridge: ${booking.jetbridge_required ? "Y" : "N"} · Gate: ${gateId}' in _TEMPLATE
     assert "DEPARTING" not in _TEMPLATE
+
+    visual = _TEMPLATE.split('<section id="visualTab"', 1)[1].split('</section>', 1)[0]
+    more_info = _TEMPLATE.split('<section id="moreInfoTab"', 1)[1].split('</section>', 1)[0]
+    assert 'id="simMap"' in visual and 'id="disruptionLog"' in visual
+    assert 'id="chart"' not in visual and 'id="queue"' not in visual
+    assert all(f'id="{panel}"' in more_info for panel in ("chart", "queue", "log", "status"))
+    assert "Events at plan tick" in more_info
+    assert 'id="scenarioSelect"' in visual and 'id="solutionSelect"' in visual
+    assert 'id="scenarioSelectMore"' in more_info and 'id="solutionSelectMore"' in more_info
+    assert 'id="scrub"' in visual and 'id="scrubMore"' in more_info
+    assert 'document.getElementById("scrubMore").value' in _TEMPLATE
+    assert 'document.getElementById("tickLabelMore").textContent' in _TEMPLATE
+    assert "position: sticky; top: 0" in _TEMPLATE
+    assert "width: 38px; height: 24px" in _TEMPLATE
+    assert 'x="380" y="365">DOMESTIC' in _TEMPLATE
+    assert 'x="840" y="365">TERMINAL 2' in _TEMPLATE
+    assert 'transform="translate(27.5 0)"' in _TEMPLATE
+    assert 'x="1220" y="365">TERMINAL 3' in _TEMPLATE
 
 
 def test_generate_writes_self_contained_html(static_path):
