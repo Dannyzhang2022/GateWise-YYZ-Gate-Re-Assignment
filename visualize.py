@@ -242,6 +242,24 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .tab-button.active { background: #238636; border-color: #2ea043; color: #fff; }
   .tab-pane { display: none; }
   .tab-pane.active { display: block; }
+  .flight-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; }
+  .flight-board { overflow: hidden; background: #0d1117; border: 1px solid #30363d; border-radius: 9px; }
+  .flight-board h2 { margin: 0; padding: 12px 14px; background: #1b2530; color: #e6edf3;
+                     font-size: 16px; letter-spacing: .07em; }
+  .flight-board table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .flight-board th { padding: 8px 10px; color: #8b949e; text-align: left; font-size: 10px;
+                     letter-spacing: .06em; border-bottom: 1px solid #30363d; }
+  .flight-board td { padding: 9px 10px; border-bottom: 1px solid #1b222b; white-space: nowrap; }
+  .flight-board tr:last-child td { border-bottom: 0; }
+  .flight-board .board-time { color: #e6edf3; font-weight: 750; font-size: 15px; }
+  .flight-board .board-flight { font-weight: 750; }
+  .flight-board .board-status { font-size: 11px; font-weight: 750; }
+  .flight-board .on-time { color: #3fb950; }
+  .flight-board .landed { color: #58a6ff; }
+  .flight-board .departed { color: #a371f7; }
+  .flight-board .delayed, .flight-board .gate-changed, .flight-board .diverted { color: #f0883e; }
+  .flight-board .cancelled { color: #f85149; }
+  .flight-board .board-empty { color: #8b949e; text-align: center; padding: 18px; }
   .runbar label { font-size: 12px; color: #8b949e; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
   .errorBox { display: none; background: #2a1216; border: 1px solid #f85149; color: #ffb4ad;
               border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px;
@@ -349,6 +367,16 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .dis-entry .dis-line.disruption .dis-kind { color: #f0883e; }
   .dis-entry .dis-line.solution .dis-kind { color: #58a6ff; }
   .dis-entry .dis-reason { color: #8b949e; }
+  .gate-explanation { margin: 6px 0 10px 18px; padding: 8px 10px; background: #111820;
+                      border: 1px solid #30363d; border-radius: 7px; font-size: 12px; }
+  .gate-explanation summary { color: #c9d1d9; cursor: pointer; font-weight: 700; }
+  .gate-explanation p { margin: 7px 0; color: #8b949e; }
+  .gate-candidates { display: grid; gap: 5px; }
+  .gate-candidate { padding: 6px 8px; border-left: 3px solid #484f58; background: #0d1117; }
+  .gate-candidate.selected { border-left-color: #3fb950; }
+  .gate-candidate.blocked { border-left-color: #f85149; color: #f0883e; }
+  .gate-candidate strong { color: #e6edf3; }
+  .gate-candidate .gate-cost { color: #8b949e; }
 </style>
 </head>
 <body>
@@ -362,6 +390,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <div class="tabs" role="tablist" aria-label="Dashboard sections">
     <button class="tab-button active" id="visualTabButton" role="tab" aria-selected="true" aria-controls="visualTab">VISUAL SIMULATION</button>
     <button class="tab-button" id="moreInfoTabButton" role="tab" aria-selected="false" aria-controls="moreInfoTab">MORE INFO</button>
+    <button class="tab-button" id="boardsTabButton" role="tab" aria-selected="false" aria-controls="boardsTab">DEPARTURES AND ARRIVALS</button>
   </div>
 
   <div id="errorBox" class="errorBox"></div>
@@ -376,8 +405,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <label>Solution</label>
       <select id="solutionSelect" class="solution-select"></select>
     </div>
-    <button id="runBtn" class="primary">&#9654; Run</button>
-    <span class="muted" id="runStatus"></span>
+    <button id="runBtn" class="primary run-button">&#9654; Run</button>
+    <span class="muted run-status" id="runStatus"></span>
   </div>
 
   <div class="toolbar">
@@ -392,7 +421,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
     </div>
     <div class="group">
       <span class="muted">speed</span>
-      <select id="speed">
+      <select id="speed" class="playback-speed">
         <option value="4">0.1x</option>
         <option value="10">0.25x</option>
         <option value="20">0.5x</option>
@@ -410,8 +439,6 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <button id="playDec" class="primary">&#9654; Decisions</button>
     </div>
   </div>
-
-  <div id="banner" class="banner" style="display:none"></div>
 
   <div class="panel" style="margin-top:16px">
     <h3>YYZ gate simulation <span class="muted" id="simTime"></span></h3>
@@ -434,8 +461,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <label>Solution</label>
       <select id="solutionSelectMore" class="solution-select"></select>
     </div>
-    <button id="runBtnMore" class="primary">&#9654; Run</button>
-    <span class="muted" id="runStatusMore"></span>
+    <button id="runBtnMore" class="primary run-button">&#9654; Run</button>
+    <span class="muted run-status" id="runStatusMore"></span>
   </div>
 
   <div class="toolbar">
@@ -450,7 +477,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
     </div>
     <div class="group">
       <span class="muted">speed</span>
-      <select id="speedMore">
+      <select id="speedMore" class="playback-speed">
         <option value="4">0.1x</option><option value="10">0.25x</option>
         <option value="20">0.5x</option><option value="40" selected>1x</option>
         <option value="80">2x</option><option value="160">4x</option>
@@ -470,6 +497,11 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <div class="chart" id="chart"><div class="placeholder" id="chartPlaceholder">Pick a scenario and press Run.</div></div>
   <div class="legend" id="legend"></div>
 
+  <div class="panel" style="margin-top:16px">
+    <h3>Gate Choice <span class="muted" id="gateExplanationTick"></span></h3>
+    <div class="scroll" id="gateExplanations" style="max-height: 320px"></div>
+  </div>
+
   <div class="panels">
     <div class="panel">
       <h3>Flight queue @ <span id="tickLabel3"></span></h3>
@@ -482,6 +514,62 @@ _TEMPLATE = r"""<!DOCTYPE html>
     <div class="panel">
       <h3>Gate status at <span id="clock2">--:--</span></h3>
       <div class="scroll" id="status"></div>
+    </div>
+  </div>
+  </section>
+
+  <section id="boardsTab" class="tab-pane" role="tabpanel" aria-labelledby="boardsTabButton">
+  <div id="runbarBoards" class="runbar" style="display:none">
+    <div class="group">
+      <label>Scenario</label>
+      <select id="scenarioSelectBoards" class="scenario-select"></select>
+    </div>
+    <div class="group">
+      <label>Solution</label>
+      <select id="solutionSelectBoards" class="solution-select"></select>
+    </div>
+    <button id="runBtnBoards" class="primary run-button">&#9654; Run</button>
+    <span class="muted run-status" id="runStatusBoards"></span>
+  </div>
+
+  <div class="toolbar">
+    <div class="group">
+      <button id="playBoards" class="primary">&#9654; Play</button>
+      <button id="resetBoards">&#8634; Reset</button>
+      <span class="clock" id="clockBoards">--:--</span>
+    </div>
+    <div class="group" style="flex:1; min-width:240px;">
+      <span class="muted">clock</span>
+      <input type="range" id="scrubBoards" min="0" max="1000" value="0" style="flex:1;">
+    </div>
+    <div class="group">
+      <span class="muted">speed</span>
+      <select id="speedBoards" class="playback-speed">
+        <option value="4">0.1x</option><option value="10">0.25x</option>
+        <option value="20">0.5x</option><option value="40" selected>1x</option>
+        <option value="80">2x</option><option value="160">4x</option>
+      </select>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <span class="muted">plan&nbsp;@</span>
+      <button id="tprevBoards">&#9664;</button>
+      <span class="clock" id="tickLabelBoards" style="font-size:14px; min-width:90px; text-align:center;"></span>
+      <button id="tnextBoards">&#9654;</button>
+      <button id="playDecBoards" class="primary">&#9654; Decisions</button>
+    </div>
+  </div>
+
+  <div class="flight-boards">
+    <div class="flight-board" aria-labelledby="arrivalsBoardTitle">
+      <h2 id="arrivalsBoardTitle">ARRIVALS</h2>
+      <table><thead><tr><th>TIME</th><th>FLIGHT</th><th>FROM</th><th>GATE</th><th>STATUS</th></tr></thead>
+        <tbody id="arrivalsBoard"></tbody></table>
+    </div>
+    <div class="flight-board" aria-labelledby="departuresBoardTitle">
+      <h2 id="departuresBoardTitle">DEPARTURES</h2>
+      <table><thead><tr><th>TIME</th><th>FLIGHT</th><th>TO</th><th>GATE</th><th>STATUS</th></tr></thead>
+        <tbody id="departuresBoard"></tbody></table>
     </div>
   </div>
   </section>
@@ -522,6 +610,7 @@ function loadTrace(trace){
   if(decTimer){ clearInterval(decTimer); decTimer = null; }
   document.getElementById("playDec").innerHTML = "&#9654; Decisions";
   document.getElementById("playDecMore").innerHTML = "&#9654; Decisions";
+  document.getElementById("playDecBoards").innerHTML = "&#9654; Decisions";
   document.getElementById("chart").innerHTML = "";
   buildStatic();
   renderPlan();
@@ -776,6 +865,7 @@ function renderPlan(){
   const phase = (planIdx === 0) ? "initial plan @ " : "plan @ ";
   document.getElementById("tickLabel").textContent = phase + tick.time_label;
   document.getElementById("tickLabelMore").textContent = phase + tick.time_label;
+  document.getElementById("tickLabelBoards").textContent = phase + tick.time_label;
   document.getElementById("tickLabel2").textContent = tick.time_label + (planIdx === 0 ? " (initial plan)" : "");
   for(const tr of document.querySelectorAll("[data-track]")) tr.innerHTML = "";
 
@@ -833,6 +923,7 @@ function renderPlan(){
   renderBanner(tick);
   renderQueue(tick);
   renderLog(tick.log);
+  renderGateExplanations(tick);
   updateClock(clock);
 
   // FLIP animation: slide reassigned bars from their old gate row to their new position
@@ -935,14 +1026,129 @@ function renderDisruptionLog(){
   el.scrollTop = el.scrollHeight;
 }
 
+function renderGateExplanations(tick){
+  const el = document.getElementById("gateExplanations");
+  const label = document.getElementById("gateExplanationTick");
+  if(!el || !TRACE) return;
+  if(label) label.textContent = tick ? `at ${tick.time_label}` : "";
+  const explanations = (tick && tick.decisions && tick.decisions.gate_explanations) || [];
+  const escapeHtml = value => String(value ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  el.innerHTML = explanations.length ? explanations.map(item => {
+    const safe = item.candidates.filter(candidate => candidate.safe);
+    const selectedRank = item.selected_rank;
+    let summary;
+    if(selectedRank === 1){
+      summary = `Selected gate ${item.gate_id} has the lowest displayed evaluator cost among ${safe.length} safe option${safe.length === 1 ? "" : "s"}.`;
+    } else if(selectedRank !== null){
+      summary = `The solution selected gate ${item.gate_id}, ranked #${selectedRank} by the displayed local evaluator cost. Other safe gates may be preferred by joint-plan or stability logic.`;
+    } else {
+      summary = `Gate ${item.gate_id} was selected, but the evaluator analysis did not find it safe at this decision point.`;
+    }
+    const candidateHtml = item.candidates.map(candidate => {
+      const selected = candidate.selected ? " · SELECTED" : "";
+      if(!candidate.safe){
+        const reasons = candidate.reasons.length
+          ? candidate.reasons.join("; ")
+          : "Rejected by a hard compatibility or availability rule.";
+        return `<div class="gate-candidate blocked"><strong>${escapeHtml(candidate.gate_id)}${selected}</strong> · Not available: ${escapeHtml(reasons)}</div>`;
+      }
+      const costs = candidate.costs;
+      const costText = `walk ${Number(costs.walking_distance).toFixed(2)} + premium-gate use ${Number(costs.domestic_at_international_gate).toFixed(2)} + gate move ${Number(costs.gate_move).toFixed(2)} = ${Number(candidate.score).toFixed(2)} points`;
+      return `<div class="gate-candidate${candidate.selected ? " selected" : ""}"><strong>${escapeHtml(candidate.gate_id)}${selected}</strong> · <span class="gate-cost">${costText}</span></div>`;
+    }).join("");
+    return `<details class="gate-explanation"><summary>Gate ${escapeHtml(item.gate_id)} for flight ${escapeHtml(item.flight_id)}</summary>`
+      + `<p>${escapeHtml(summary)} Safe options are ranked by the evaluator's displayed local cost; the solution may use additional joint-planning logic.</p>`
+      + `<div class="gate-candidates">${candidateHtml}</div></details>`;
+  }).join("") : '<span class="muted" style="font-size:12px">No gate decisions at this plan tick.</span>';
+}
+
+function renderFlightBoards(tick, t){
+  const flights = tick.flights || {};
+  const gateByFlight = {};
+  for(const [gateId, bookings] of Object.entries(tick.plan || {})){
+    for(const booking of bookings) gateByFlight[booking.flight_id] = gateId;
+  }
+
+  const updates = {};
+  for(let i = 0; i <= planIdx; i++){
+    for(const event of TRACE.ticks[i].events || []){
+      if(!event.flight_id || !event.status) continue;
+      if(event.status === "REINSTATED") { delete updates[event.flight_id]; continue; }
+      if(["DELAYED", "SCHEDULE UPDATED", "GATE CHANGED", "DIVERTED", "AIRCRAFT CHANGE"].includes(event.status)){
+        const statuses = updates[event.flight_id] || (updates[event.flight_id] = []);
+        if(!statuses.includes(event.status)) statuses.push(event.status);
+      }
+    }
+  }
+
+  const escape = value => String(value ?? "—")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  const flightStatus = (fid, flight, leg, direction) => {
+    if(flight.cancelled || leg.cancelled) return {text: "CANCELLED", className: "cancelled"};
+    const complete = direction === "departure"
+      ? leg.departure_minute <= t : leg.arrival_minute <= t;
+    const updatesForFlight = updates[fid] || [];
+    if(complete){
+      const completed = direction === "departure" ? "DEPARTED" : "LANDED";
+      return {
+        text: [completed, ...updatesForFlight].join(" · "),
+        className: direction === "departure" ? "departed" : "landed",
+      };
+    }
+    if(updatesForFlight.length){
+      const className = updatesForFlight.includes("DIVERTED") ? "diverted"
+        : updatesForFlight.includes("GATE CHANGED") ? "gate-changed"
+        : updatesForFlight.some(status => status === "DELAYED" || status === "SCHEDULE UPDATED") ? "delayed" : "on-time";
+      return {text: updatesForFlight.join(" · "), className};
+    }
+    return {text: "ON TIME", className: "on-time"};
+  };
+  const departures = [], arrivals = [];
+  for(const [fid, flight] of Object.entries(flights)){
+    for(const leg of flight.legs || []){
+      const gate = gateByFlight[fid] || "—";
+      if(leg.departure_station === "YYZ"){
+        const {text: status, className: statusClass} = flightStatus(fid, flight, leg, "departure");
+        departures.push({
+          minute: leg.departure_minute, time: fmt(leg.departure_minute), flight: shortId(fid),
+          route: leg.arrival_station, gate, status, statusClass,
+        });
+      }
+      if(leg.arrival_station === "YYZ"){
+        const {text: status, className: statusClass} = flightStatus(fid, flight, leg, "arrival");
+        arrivals.push({
+          minute: leg.arrival_minute, time: fmt(leg.arrival_minute), flight: shortId(fid),
+          route: leg.departure_station, gate, status, statusClass,
+        });
+      }
+    }
+  }
+
+  const renderRows = (rows, emptyMessage) => {
+    rows.sort((a,b) => a.minute - b.minute || a.flight.localeCompare(b.flight));
+    if(!rows.length) return `<tr><td class="board-empty" colspan="5">${emptyMessage}</td></tr>`;
+    return rows.map(row => `<tr><td class="board-time">${escape(row.time)}</td>`
+      + `<td class="board-flight">${escape(row.flight)}</td><td>${escape(row.route)}</td>`
+      + `<td>${escape(row.gate)}</td><td class="board-status ${row.statusClass}">${escape(row.status)}</td></tr>`
+    ).join("");
+  };
+  document.getElementById("departuresBoard").innerHTML = renderRows(departures, "No departures in this schedule.");
+  document.getElementById("arrivalsBoard").innerHTML = renderRows(arrivals, "No arrivals in this schedule.");
+}
+
 // ---- clock: move playhead, mark gates in-use / free / down -----------------
 function updateClock(t){
   clock = t;
   document.getElementById("clock").textContent = fmt(t);
   document.getElementById("clockMore").textContent = fmt(t);
+  document.getElementById("clockBoards").textContent = fmt(t);
   document.getElementById("clock2").textContent = fmt(t);
   document.getElementById("scrub").value = Math.round(frac(t)*1000);
   document.getElementById("scrubMore").value = Math.round(frac(t)*1000);
+  document.getElementById("scrubBoards").value = Math.round(frac(t)*1000);
   document.getElementById("playhead").style.left =
     `calc(var(--labelw) + (100% - var(--labelw)) * ${frac(t)})`;
 
@@ -971,6 +1177,7 @@ function updateClock(t){
   }
   document.getElementById("status").innerHTML = statusRows.join("");
   renderSimulation(tick, t);
+  renderFlightBoards(tick, t);
 }
 
 // ---- playback --------------------------------------------------------------
@@ -1009,6 +1216,7 @@ function setPlaying(on){
   playing = on; lastTs = null;
   document.getElementById("play").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   document.getElementById("playMore").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
+  document.getElementById("playBoards").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   if(on){ if(clock >= TMAX) setClockTime(TMIN); raf = requestAnimationFrame(step); }
   else if(raf){ cancelAnimationFrame(raf); raf = null; }
 }
@@ -1034,19 +1242,20 @@ function setDecPlay(on){
     btn.innerHTML = "&#9654; Decisions";
   }
   document.getElementById("playDecMore").innerHTML = btn.innerHTML;
+  document.getElementById("playDecBoards").innerHTML = btn.innerHTML;
 }
 
-for(const id of ["play", "playMore"]) document.getElementById(id).onclick = () => setPlaying(!playing);
-for(const id of ["reset", "resetMore"]) document.getElementById(id).onclick = () => { setPlaying(false); setClockTime(TMIN); };
-for(const id of ["scrub", "scrubMore"]) document.getElementById(id).oninput = (e) => {
+for(const id of ["play", "playMore", "playBoards"]) document.getElementById(id).onclick = () => setPlaying(!playing);
+for(const id of ["reset", "resetMore", "resetBoards"]) document.getElementById(id).onclick = () => { setPlaying(false); setClockTime(TMIN); };
+for(const id of ["scrub", "scrubMore", "scrubBoards"]) document.getElementById(id).oninput = (e) => {
   setPlaying(false); setClockTime(TMIN + (e.target.value/1000)*SPAN);
 };
-for(const id of ["speed", "speedMore"]) document.getElementById(id).onchange = (e) => {
-  document.getElementById(id === "speed" ? "speedMore" : "speed").value = e.target.value;
+for(const id of ["speed", "speedMore", "speedBoards"]) document.getElementById(id).onchange = (e) => {
+  document.querySelectorAll(".playback-speed").forEach(speed => speed.value = e.target.value);
 };
-for(const id of ["tprev", "tprevMore"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx-1); };
-for(const id of ["tnext", "tnextMore"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx+1); };
-for(const id of ["playDec", "playDecMore"]) document.getElementById(id).onclick = () => setDecPlay(!decTimer);
+for(const id of ["tprev", "tprevMore", "tprevBoards"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx-1); };
+for(const id of ["tnext", "tnextMore", "tnextBoards"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx+1); };
+for(const id of ["playDec", "playDecMore", "playDecBoards"]) document.getElementById(id).onclick = () => setDecPlay(!decTimer);
 
 for(const button of document.querySelectorAll(".tab-button")){
   button.onclick = () => {
@@ -1077,8 +1286,8 @@ function runNow(){
   const activePane = document.querySelector(".tab-pane.active") || document.getElementById("visualTab");
   const scenario = activePane.querySelector(".scenario-select").value;
   const solution = activePane.querySelector(".solution-select").value;
-  document.querySelectorAll("#runBtn, #runBtnMore").forEach(btn => btn.disabled = true);
-  document.querySelectorAll("#runStatus, #runStatusMore").forEach(status => status.textContent = "running…");
+  document.querySelectorAll(".run-button").forEach(btn => btn.disabled = true);
+  document.querySelectorAll(".run-status").forEach(status => status.textContent = "running…");
   showError(null);
   fetch(`/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`)
     .then(r => r.json())
@@ -1095,16 +1304,18 @@ function runNow(){
     })
     .catch(err => showError(String(err)))
     .finally(() => {
-      document.querySelectorAll("#runBtn, #runBtnMore").forEach(btn => btn.disabled = false);
-      document.querySelectorAll("#runStatus, #runStatusMore").forEach(status => status.textContent = "");
+      document.querySelectorAll(".run-button").forEach(btn => btn.disabled = false);
+      document.querySelectorAll(".run-status").forEach(status => status.textContent = "");
     });
 }
 
 if(SERVER_MODE){
   document.getElementById("runbar").style.display = "flex";
   document.getElementById("runbarMore").style.display = "flex";
+  document.getElementById("runbarBoards").style.display = "flex";
   document.getElementById("runBtn").onclick = runNow;
   document.getElementById("runBtnMore").onclick = runNow;
+  document.getElementById("runBtnBoards").onclick = runNow;
   Promise.all([fetch("/api/scenarios").then(r => r.json()),
                fetch("/api/solutions").then(r => r.json())]).then(([scenarios, solutions]) => {
     document.querySelectorAll(".scenario-select").forEach(sel => {

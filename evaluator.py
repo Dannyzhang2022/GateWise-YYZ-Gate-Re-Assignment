@@ -21,13 +21,14 @@ import argparse
 import importlib
 import sys
 
-from gms.config import CATEGORY_NAME
-from gms.timeutil import fmt
+from gms.config import CATEGORY_NAME, HOME
+from gms.timeutil import fmt, absolutize, hhmm_str_to_min
 from gms.loader import load_static, load_schedule
-from gms.messages import FlightStore, parse_gate_outage, OUTAGE_OPEN_END
+from gms.messages import FlightStore, parse_gate_outage, OUTAGE_OPEN_END, make_flight_id
 from gms.profile import flight_profile
 from gms.occupancy import sets_conflict, intervals_overlap
 from gms.compat import hard_compatible, is_premium_misuse
+from person3.gate_choice import rank_gate_choices
 from gms.scoring import ScoreCard, HardFailure
 
 
@@ -36,6 +37,61 @@ from gms.scoring import ScoreCard, HardFailure
 # ---------------------------------------------------------------------------
 def _intervals_label(intervals) -> str:
     return ", ".join(f"[{fmt(s)}, {fmt(e)}]" for s, e in intervals) or "(no presence)"
+
+
+def _board_flights(flight_states):
+    """Snapshot YYZ-bound flight legs for arrival/departure boards."""
+    flights = {}
+    for fid, state in flight_states.items():
+        source_legs = state.get("legs", [])
+        time_values = []
+        for leg in source_legs:
+            time_values.extend((
+                hhmm_str_to_min(leg["scheduledDepartureTime"]),
+                hhmm_str_to_min(leg["scheduledArrivalTime"]),
+            ))
+        absolute_times = absolutize(time_values)
+        cancelled_legs = state.get("cancelled_legs", set())
+        legs = []
+        for index, leg in enumerate(source_legs):
+            departure, arrival = leg["departureStation"], leg["arrivalStation"]
+            if departure != HOME and arrival != HOME:
+                continue
+            legs.append({
+                "departure_station": departure,
+                "arrival_station": arrival,
+                "departure_time": leg["scheduledDepartureTime"],
+                "arrival_time": leg["scheduledArrivalTime"],
+                "departure_minute": absolute_times[index * 2],
+                "arrival_minute": absolute_times[index * 2 + 1],
+                "aircraft_type": leg["aircraftType"],
+                "cancelled": state.get("cancelled", False) or
+                    (departure, arrival) in cancelled_legs,
+            })
+        flights[fid] = {
+            "cancelled": bool(state.get("cancelled", False)),
+            "diversion": bool(state.get("diversion", False)),
+            "reason": state.get("reason"),
+            "legs": legs,
+        }
+    return flights
+
+
+def _timing_change_is_delay(previous_legs, updated_legs):
+    """Distinguish a later time update from an earlier schedule change."""
+    previous = {
+        (leg["departureStation"], leg["arrivalStation"]): leg
+        for leg in previous_legs
+    }
+    for leg in updated_legs:
+        old = previous.get((leg["departureStation"], leg["arrivalStation"]))
+        if old is None:
+            continue
+        for field in ("scheduledDepartureTime", "scheduledArrivalTime"):
+            delta = (hhmm_str_to_min(leg[field]) - hhmm_str_to_min(old[field])) % 1440
+            if 0 < delta <= 12 * 60:
+                return True
+    return False
 
 
 def _blocked_reason(gid, fid, intervals, gate_assignments, gate_outages):
@@ -78,6 +134,76 @@ def _validate_actions(actions, t):
             if (not isinstance(pair, (list, tuple))) or len(pair) != 2:
                 raise HardFailure(f"Invalid {key} entry {pair!r}; expected (flight_id, gate_id).", t)
     return actions.get("assignments", []), actions.get("reassignments", [])
+
+
+def _explain_gate_decisions(observation, assignments, reassignments):
+    """Rank the gates that were available when each recorded decision was made."""
+    bookings = {
+        gate_id: [dict(booking) for booking in gate_bookings]
+        for gate_id, gate_bookings in observation["gate_assignments"].items()
+    }
+    for gate_id in observation["gates"]:
+        bookings.setdefault(gate_id, [])
+
+    explanations = []
+    for decision_type, decisions in (
+        ("reassignment", reassignments),
+        ("assignment", assignments),
+    ):
+        for flight_id, selected_gate in decisions:
+            flight = observation["waiting_flights"].get(flight_id)
+            if decision_type == "reassignment":
+                flight = observation["assigned_flights"].get(flight_id)
+                change = observation["changed_flights"].get(flight_id)
+                if flight is not None and change:
+                    flight = {**flight, **change["new"]}
+            if flight is None:
+                continue
+
+            ranked = rank_gate_choices(
+                flight_id,
+                {**flight, "current_time": observation["time"]},
+                observation["gates"],
+                bookings,
+                observation["gate_outages"],
+            )
+            candidates = [
+                {
+                    "gate_id": choice["gate_id"],
+                    "safe": choice["safe"],
+                    "reasons": choice["reasons"],
+                    "costs": choice["costs"],
+                    "score": choice["score"],
+                    "selected": choice["gate_id"] == selected_gate,
+                }
+                for choice in ranked
+            ]
+            safe_candidates = [choice for choice in candidates if choice["safe"]]
+            selected_rank = next(
+                (index + 1 for index, choice in enumerate(safe_candidates)
+                 if choice["gate_id"] == selected_gate),
+                None,
+            )
+            explanations.append({
+                "flight_id": flight_id,
+                "decision_type": decision_type,
+                "gate_id": selected_gate,
+                "selected_rank": selected_rank,
+                "safe_gate_count": len(safe_candidates),
+                "candidates": candidates,
+            })
+
+            if decision_type == "reassignment":
+                for gate_bookings in bookings.values():
+                    gate_bookings[:] = [
+                        booking for booking in gate_bookings
+                        if booking.get("flight_id") != flight_id
+                    ]
+            bookings.setdefault(selected_gate, []).append({
+                "flight_id": flight_id,
+                "intervals": flight["intervals"],
+            })
+    return explanations
 
 
 # ---------------------------------------------------------------------------
@@ -139,17 +265,28 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                         "reason": f"Outage window: {fmt(window[0])} to {fmt(window[1])}.",
                     })
                     continue
+                meta = msg.get("flight", {})
+                previous_id = make_flight_id(
+                    meta.get("carrier", ""), meta.get("flightNumber", ""),
+                    meta.get("originatingDate", ""), meta.get("flightSuffix"),
+                )
+                previous_state = store.flights.get(previous_id)
+                previous_legs = ([dict(leg) for leg in previous_state.get("legs", [])]
+                                  if previous_state else [])
                 fid, warn = store.apply(msg, t)
                 if warn:
                     log(f"  [WARN] {warn}")
                 if fid:
                     touched.append(fid)
                     action = msg.get("action")
+                    flight_state = store.flights.get(fid, {})
                     if action == "DivertFlight":
                         log(f"  [DIVERT] unscheduled {store.flights[fid].get('reason','diversion')} "
                             f"arrival: {fid}")
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": "DIVERTED",
                             "subject": f"Flight {fid} diverted to YYZ.",
                             "reason": msg.get("reason") or "An unscheduled diversion was received.",
                         })
@@ -162,12 +299,19 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                             detail = "All legs were canceled."
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": "CANCELLED",
                             "subject": f"Flight {fid} was canceled.",
                             "reason": detail,
                         })
                     elif action == "UpdateTiming":
+                        status = ("DELAYED" if _timing_change_is_delay(
+                            previous_legs, flight_state.get("legs", [])
+                        ) else "SCHEDULE UPDATED")
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": status,
                             "subject": f"Flight {fid}'s schedule changed.",
                             "reason": "One or more scheduled departure or arrival times were updated.",
                         })
@@ -177,18 +321,24 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                         aircraft = equipment.get("aircraftType", "the aircraft")
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": "AIRCRAFT CHANGE",
                             "subject": f"Flight {fid}'s aircraft assignment changed.",
                             "reason": f"Equipment was updated to {aircraft} for {scope}.",
                         })
                     elif action == "ReplaceFlight":
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": "SCHEDULE UPDATED",
                             "subject": f"Flight {fid}'s schedule was replaced.",
                             "reason": "A replacement flight message was received.",
                         })
                     elif action == "ReinstateFlight":
                         tick_events.append({
                             "kind": "DISRUPTION",
+                            "flight_id": fid,
+                            "status": "REINSTATED",
                             "subject": f"Flight {fid} was reinstated.",
                             "reason": "The previous cancellation was lifted.",
                         })
@@ -317,8 +467,12 @@ def run_sim(static_info: str, flight_schedule: str, solution_module: str,
                 entry["decisions"] = {
                     "assignments": [[a, b] for a, b in assignments_out],
                     "reassignments": [[a, b] for a, b in reassignments_out],
+                    "gate_explanations": _explain_gate_decisions(
+                        observation, assignments_out, reassignments_out
+                    ),
                 }
                 entry["events"] = tick_events
+                entry["flights"] = _board_flights(store.flights)
                 trace.append(entry)
 
     except HardFailure as hf:
@@ -479,6 +633,10 @@ def _apply_reassignment(fid, new_gid, t, gates, store, ac_info, stations,
             reason = "The gate plan was adjusted to improve the overall assignment."
         timeline_events.append({
             "kind": "SOLUTION",
+            "flight_id": fid,
+            "status": "GATE CHANGED",
+            "previous_gate": old_gid,
+            "gate_id": new_gid,
             "subject": f"Flight {fid} was moved from gate {old_gid} to gate {new_gid}.",
             "reason": reason,
         })

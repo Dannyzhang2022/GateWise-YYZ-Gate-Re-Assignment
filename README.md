@@ -87,6 +87,12 @@ python visualize.py --serve
 
 Open the local address printed in the terminal. On Windows, you can also double-click `launch_visualizer.bat`.
 
+The disruption and response timeline includes expandable **“Why gate X for flight Y?”**
+entries for assignments and reassignments. These show which gates were safe at
+that decision time, why other gates were rejected, and the selected gate's
+walking, premium-gate, and move costs. The displayed ranking uses evaluator
+costs; a solution may also consider joint-plan or other heuristics.
+
 6. Try Disruption Scenarios
 Useful starting scenarios include:
 
@@ -129,4 +135,3 @@ Valid runs receive a score where lower is better. The score considers:
 - flights left unassigned at the end
 
 Every supplied scenario is designed to allow a solution with zero hard failures. Hidden scenarios may use different schedules and airport layouts. Besides considering hard failures and soft scores, it is also important to consider code quality, the clarity of the visual model, and if your changes are meaningful/useful to airport staff. 
-

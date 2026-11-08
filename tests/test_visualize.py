@@ -29,7 +29,26 @@ def test_record_mode_returns_a_trace(static_path):
                and event["reason"] for event in disruptions)
     assert any("moved from gate D1" in event["subject"]
                and event["reason"] for event in solutions)
+    explanation = last["decisions"]["gate_explanations"][0]
+    assert explanation["flight_id"] == "AC-401-2025-06-15"
+    assert explanation["decision_type"] == "reassignment"
+    assert explanation["gate_id"] == "D2"
+    assert explanation["selected_rank"] == 1
+    gate_options = {choice["gate_id"]: choice for choice in explanation["candidates"]}
+    assert gate_options["D2"]["safe"] and gate_options["D2"]["selected"]
+    assert not gate_options["D1"]["safe"]
+    assert "overlaps a gate outage" in gate_options["D1"]["reasons"]
     assert "DISRUPTION:" in _TEMPLATE and "SOLUTION:" in _TEMPLATE and "REASON:" in _TEMPLATE
+    gate_explanations = _TEMPLATE.split("function renderGateExplanations(tick){", 1)[1].split(
+        "function renderFlightBoards", 1
+    )[0]
+    disruption_log = _TEMPLATE.split("function renderDisruptionLog(){", 1)[1].split(
+        "function renderGateExplanations", 1
+    )[0]
+    assert "gate_explanations" in gate_explanations and "Not available:" in gate_explanations
+    assert "<summary>Gate ${escapeHtml(item.gate_id)} for flight ${escapeHtml(item.flight_id)}</summary>" in gate_explanations
+    assert "gate_explanations" not in disruption_log
+    assert "No disruptions yet." in disruption_log
     moved_flight = next(booking for bookings in last["plan"].values() for booking in bookings)
     assert {"wingspan", "jetbridge_required", "aircraft_types"} <= moved_flight.keys()
     assert 'id="simMap"' in _TEMPLATE and "function renderSimulation" in _TEMPLATE
@@ -57,8 +76,9 @@ def test_record_mode_returns_a_trace(static_path):
     visual = _TEMPLATE.split('<section id="visualTab"', 1)[1].split('</section>', 1)[0]
     more_info = _TEMPLATE.split('<section id="moreInfoTab"', 1)[1].split('</section>', 1)[0]
     assert 'id="simMap"' in visual and 'id="disruptionLog"' in visual
+    assert 'id="gateExplanations"' not in visual
     assert 'id="chart"' not in visual and 'id="queue"' not in visual
-    assert all(f'id="{panel}"' in more_info for panel in ("chart", "queue", "log", "status"))
+    assert all(f'id="{panel}"' in more_info for panel in ("chart", "queue", "log", "status", "gateExplanations"))
     assert "Events at plan tick" in more_info
     assert 'id="scenarioSelect"' in visual and 'id="solutionSelect"' in visual
     assert 'id="scenarioSelectMore"' in more_info and 'id="solutionSelectMore"' in more_info
@@ -71,6 +91,44 @@ def test_record_mode_returns_a_trace(static_path):
     assert 'x="840" y="365">TERMINAL 2' in _TEMPLATE
     assert 'transform="translate(27.5 0)"' in _TEMPLATE
     assert 'x="1220" y="365">TERMINAL 3' in _TEMPLATE
+
+
+def test_departures_arrivals_tab_has_airport_boards_and_controls():
+    boards = _TEMPLATE.split('<section id="boardsTab"', 1)[1].split('</section>', 1)[0]
+    assert ">DEPARTURES AND ARRIVALS</button>" in _TEMPLATE
+    assert "DEPARTURES" in boards and "ARRIVALS" in boards
+    assert boards.index("ARRIVALS") < boards.index("DEPARTURES")
+    assert all(field in boards for field in ("TIME", "FLIGHT", "TO", "FROM", "GATE", "STATUS"))
+    assert 'id="departuresBoard"' in boards and 'id="arrivalsBoard"' in boards
+    assert all(control in boards for control in (
+        'id="scenarioSelectBoards"', 'id="solutionSelectBoards"',
+        'id="scrubBoards"', 'id="runBtnBoards"',
+    ))
+    assert "function renderFlightBoards" in _TEMPLATE
+    assert '.flight-board .landed { color: #58a6ff; }' in _TEMPLATE
+    assert '.flight-board .departed { color: #a371f7; }' in _TEMPLATE
+    assert 'direction === "departure" ? "DEPARTED" : "LANDED"' in _TEMPLATE
+    assert 'text: [completed, ...updatesForFlight].join(" · ")' in _TEMPLATE
+
+
+def test_combined_scenario_trace_includes_board_updates(static_path):
+    result = run_sim(static_path, scenario_path("combined_24h"), "solution",
+                     verbose=False, record=True)
+    assert result["status"] == "OK", result.get("reason")
+    ticks = result["trace"]["ticks"]
+    assert all("flights" in tick for tick in ticks)
+
+    events = [event for tick in ticks for event in tick["events"]]
+    statuses = {event.get("status") for event in events}
+    assert {"CANCELLED", "DELAYED", "GATE CHANGED"} <= statuses
+    assert all(event.get("flight_id") for event in events
+               if event.get("status") in {"CANCELLED", "DELAYED", "GATE CHANGED"})
+
+    board_flights = ticks[0]["flights"]
+    assert any(leg["arrival_station"] == "YYZ"
+               for flight in board_flights.values() for leg in flight["legs"])
+    assert any(leg["departure_station"] == "YYZ"
+               for flight in board_flights.values() for leg in flight["legs"])
 
 
 def test_generate_writes_self_contained_html(static_path):
