@@ -1,0 +1,10 @@
+Gate Repair Code: Hackathon Pitch
+
+When flight details change, a gate assignment may no longer be safe or available. This module checks whether each affected flight can keep its gate by verifying aircraft compatibility, gate outages, and overlapping bookings.
+
+It works on a copy of the schedule, so the original booking data stays unchanged. It stages the updated flight times before checking conflicts, which helps ensure the decisions reflect the full incoming update. It also checks for collisions between flights changing at the same time, so two updated flights are not kept at the same gate if their schedules overlap.
+
+For flights that need to move, it considers the most constrained flights first—the ones with fewer compatible gate options. It then chooses from gates that are compatible, available, and conflict-free, ranking them by distance and gate-use penalties.
+
+The result is a list of proposed gate changes and an updated local occupancy map for the coordinator to use in the next planning step. If no safe replacement is available, the caller can handle that flight separately.
+
