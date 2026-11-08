@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 
 from solution import decide as team_decide
-from person1.recovery_planner import decide as recovery_decide
+from david.recovery_planner import decide as recovery_decide
 
 
 def gate(span=60, dist=100):
@@ -110,7 +110,7 @@ def simple_waiting_observation():
 
 
 def test_joint_optimizer_crash_does_not_block_recovery_planner(monkeypatch):
-    import person1.plan_optimizer as optimizer
+    import david.plan_optimizer as optimizer
 
     def fail(**_kwargs):
         raise RuntimeError("synthetic optimizer failure")
@@ -122,7 +122,7 @@ def test_joint_optimizer_crash_does_not_block_recovery_planner(monkeypatch):
 
 
 def test_recovery_planner_crash_does_not_block_joint_optimizer(monkeypatch):
-    import person1.recovery_planner as recovery_planner
+    import david.recovery_planner as recovery_planner
 
     def fail(_observation):
         raise RuntimeError("synthetic recovery planner failure")

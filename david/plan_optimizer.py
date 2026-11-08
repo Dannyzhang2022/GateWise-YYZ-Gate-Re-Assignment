@@ -13,8 +13,8 @@ from typing import Any
 from gms.config import WEIGHTS, DOMESTIC, INTERNATIONAL
 from gms.compat import hard_compatible
 from gms.occupancy import sets_conflict, intervals_overlap
-from person2.flight_order import order_waiting_flights
-from person3.gate_choice import rank_gate_choices
+from noah.flight_order import order_waiting_flights
+from yuji.gate_choice import rank_gate_choices
 
 
 def _overlap(a, b):

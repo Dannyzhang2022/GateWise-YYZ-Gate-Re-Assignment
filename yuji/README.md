@@ -1,4 +1,4 @@
-# Person 3 — Gate selection
+# Yuji — Gate selection
 
 This folder contains the gate-selection part of the YYZ assignment project.
 
@@ -14,7 +14,7 @@ This folder contains the gate-selection part of the YYZ assignment project.
 From the repository root:
 
 ```powershell
-python -m unittest -v person3.test_gate_choice
+python -m unittest -v yuji.test_gate_choice
 ```
 
 ## Run the evaluator
@@ -22,7 +22,7 @@ python -m unittest -v person3.test_gate_choice
 From the repository root:
 
 ```powershell
-python evaluator.py --scenario flight_data/simple.json --solution person3.solution_gatechoice
+python evaluator.py --scenario flight_data/simple.json --solution yuji.solution_gatechoice
 ```
 
 The chooser rejects any gate that violates aircraft type, wingspan, jetbridge, booking, or outage rules. It then ranks only safe gates by walking distance, domestic use of an international gate, and reassignment cost. If no safe gate exists, a waiting flight remains unassigned.

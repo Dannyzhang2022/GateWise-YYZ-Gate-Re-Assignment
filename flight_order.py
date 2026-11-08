@@ -1,6 +1,6 @@
-"""Backward-compatible imports for the Person 2 flight-order component."""
+"""Backward-compatible imports for the Noah flight-order component."""
 
-from person2.flight_order import (
+from noah.flight_order import (
     CARGO,
     DOMESTIC,
     INTERNATIONAL,

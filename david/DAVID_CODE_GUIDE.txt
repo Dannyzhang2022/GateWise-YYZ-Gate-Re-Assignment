@@ -1,10 +1,10 @@
-PERSON 1 CODE GUIDE
+DAVID CODE GUIDE
 Coordinated gate planning and disruption recovery
 =================================================
 
-1. WHAT PERSON 1 IS RESPONSIBLE FOR
+1. WHAT DAVID IS RESPONSIBLE FOR
 ----------------------------------
-Person 1 is the coordinator of the team solution. It does not replace the
+David is the coordinator of the team solution. It does not replace the
 flight-ordering, gate-ranking, or disruption-assessment work written by the
 other teammates. Instead, it combines those components into one decision at
 each evaluator event time.
@@ -20,41 +20,41 @@ The main goals are to:
 - Compare the joint plan with an internal recovery plan before answering.
 
 The evaluator remains the final authority on whether an answer is valid and
-what score it receives. Person 1 builds candidate answers; it does not modify
+what score it receives. David builds candidate answers; it does not modify
 the evaluator or the airport state directly.
 
 
-2. FILES OWNED OR USED BY PERSON 1
+2. FILES OWNED OR USED BY DAVID
 ---------------------------------
-person1/__init__.py
-    Marks person1 as a Python package. Its docstring identifies the package;
+david/__init__.py
+    Marks david as a Python package. Its docstring identifies the package;
     there is no algorithm in this file.
 
-person1/solution_team.py
-    The main Person 1 entry point. It prepares the observation, asks Person 4
+david/solution_team.py
+    The main David entry point. It prepares the observation, asks Danny
     for disruption status, runs the joint optimizer and recovery planner,
     compares their heuristic costs, and returns one action list.
 
-person1/plan_optimizer.py
+david/plan_optimizer.py
     The joint, stability-first optimizer. It builds safe gate options, creates
     a scarcity-first initial plan, improves it with local search, sequences
     reassignments, and returns assignments plus reassignments.
 
-person1/README.md
+david/README.md
     A short architectural summary. This TXT file is the detailed guide.
 
-Root-level files that connect Person 1 to the evaluator:
+Root-level files that connect David to the evaluator:
 
 solution.py
     The normal evaluator entry point. It imports decide from the root-level
     solution_team.py.
 
-solution_team.py (repository root, not the one inside person1)
-    Imports decide from person1.solution_team. This keeps the evaluator command
-    simple while the implementation remains in the Person 1 folder.
+solution_team.py (repository root, not the one inside david)
+    Imports decide from david.solution_team. This keeps the evaluator command
+    simple while the implementation remains in the David folder.
 
-person1/recovery_planner.py
-    The internal alternate planner used by Person 1 as a comparison and recovery fallback.
+david/recovery_planner.py
+    The internal alternate planner used by David as a comparison and recovery fallback.
     It is especially important for repairs that require moving incumbents or
     considering gate alternatives removed by the stability-first candidate.
 
@@ -70,14 +70,14 @@ The call flow is:
     evaluator.py
       -> solution.py
         -> root solution_team.py
-          -> person1.solution_team.decide(observation)
-            -> person4.disruption_repair.assess_changed_flights(...)
-            -> person1.plan_optimizer.plan_joint_assignments(...)
-               -> person2.flight_order.order_waiting_flights(...)
-               -> person3.gate_choice.rank_gate_choices(...)
-            -> person1.recovery_planner.decide(observation)
+          -> david.solution_team.decide(observation)
+            -> danny.disruption_repair.assess_changed_flights(...)
+            -> david.plan_optimizer.plan_joint_assignments(...)
+               -> noah.flight_order.order_waiting_flights(...)
+               -> yuji.gate_choice.rank_gate_choices(...)
+            -> david.recovery_planner.decide(observation)
             -> replay both candidates with _actions_are_safe(...)
-            -> person1.solution_team._heuristic_cost(...) for each safe candidate
+            -> david.solution_team._heuristic_cost(...) for each safe candidate
             -> return the lower-cost safe candidate
 
 The evaluator then:
@@ -89,7 +89,7 @@ The evaluator then:
 5. Continues to the next event time.
 6. Computes final soft penalties at the end of the simulation.
 
-Person 1 is stateless between calls. It does not keep a hidden airport model in
+David is stateless between calls. It does not keep a hidden airport model in
 module globals. Each decision is based on the current observation supplied by
 the evaluator.
 
@@ -123,7 +123,7 @@ gate_assignments
     its occupancy intervals.
 
 ac_info
-    Aircraft reference information supplied by the evaluator. Person 1 mostly
+    Aircraft reference information supplied by the evaluator. David mostly
     works with the already-derived flight views instead of recalculating them.
 
 A flight's intervals describe when it physically occupies a gate. Intervals
@@ -138,10 +138,10 @@ Important flight fields include:
 - jetbridge_required: whether a jetbridge is mandatory.
 - intervals: all gate-occupancy windows.
 - priority: identifies an emergency/priority flight when supplied.
-- delay_minutes: optional metadata used by Person 2 as a tie-breaker.
+- delay_minutes: optional metadata used by Noah as a tie-breaker.
 - gate_id: present for an already-assigned flight.
 
-Person 1 must return:
+David must return:
 
     {
         "assignments": [(flight_id, gate_id), ...],
@@ -182,7 +182,7 @@ STEP 4: Build the set of planning flight IDs.
     candidate_ids contains every assigned and waiting flight in this decision.
     These flights are variables in the joint plan, not immovable bookings.
 
-STEP 5: Ask Person 4 for disruption status.
+STEP 5: Ask Danny for disruption status.
     assess_changed_flights returns, for each changed flight:
 
         current_gate
@@ -289,7 +289,7 @@ The hard rules include:
 - Domestic flights may use domestic or international gates, but international
   use receives a soft premium-gate penalty.
 
-Person 1 combines these constraints with optimization. It does not treat a
+David combines these constraints with optimization. It does not treat a
 low-cost but unsafe gate as a valid choice.
 
 7. plan_optimizer.py: HELPER FUNCTIONS
@@ -299,10 +299,10 @@ _overlap(a, b)
     It is used when checking an existing gate against outage windows.
 
 _flight_cost(...)
-    Adds Person 1's planning costs to a safe Person 3 gate choice.
+    Adds David's planning costs to a safe Yuji gate choice.
 
     It starts with walking distance and domestic-at-international cost. It does
-    not simply reuse Person 3's total score because Person 1 applies its own
+    not simply reuse Yuji's total score because David applies its own
     changed-flight and stability policy.
 
     For a future flight, a gate with an earlier outage receives a risk proxy
@@ -349,7 +349,7 @@ make the coordinator's data handoff explicit.
 
 STEP 1: Build a unified flight mapping.
     Assigned and waiting flights are copied into flights. Each receives a
-    current_time field for Person 3's cost calculations. current_gates stores
+    current_time field for Yuji's cost calculations. current_gates stores
     each assigned flight's gate and None for each waiting flight. If there are
     no flights, the function immediately returns two empty action lists.
 
@@ -359,16 +359,16 @@ STEP 2: Separate fixed and variable occupancy.
     all of its alternatives. Fixed bookings remain as hard obstacles. Mutual
     conflicts among variable flights are handled later by _conflicts.
 
-STEP 3: Generate safe gate options with Person 3.
+STEP 3: Generate safe gate options with Yuji.
     For each flight, the optimizer creates solo_bookings containing fixed
-    occupancy plus that flight's own booking. The own booking lets Person 3
+    occupancy plus that flight's own booking. The own booking lets Yuji
     identify the current gate while ignoring the same flight as a blocker.
 
     rank_gate_choices checks physical compatibility, occupancy, outages, and
     malformed data. Unsafe choices are discarded. A changed flight's current
-    gate is also discarded when Person 4 marked it unsafe.
+    gate is also discarded when Danny marked it unsafe.
 
-STEP 4: Add Person 1's gate costs.
+STEP 4: Add David's gate costs.
     Every safe choice receives a total_cost calculated by _flight_cost. The
     resulting options mapping is organized as:
 
@@ -382,7 +382,7 @@ STEP 5: Apply stability-first option policies.
 
     If an assigned flight's current gate is physically compatible and has no
     overlapping outage, the candidate keeps that flight at its current gate.
-    If Person 3 did not create an entry for it, the optimizer constructs a
+    If Yuji did not create an entry for it, the optimizer constructs a
     zero-move-cost entry using the gate's distance and premium status.
 
     These policies deliberately favor operational stability. They are why the
@@ -396,7 +396,7 @@ STEP 6: Set unassigned costs.
     existing placements rather than dropping them.
 
 STEP 7: Create a scarcity-first initial plan.
-    Person 2 receives the unified flight mapping and the number of safe options
+    Noah receives the unified flight mapping and the number of safe options
     for each flight. It orders flights by emergency priority, fewer options,
     larger delay, and earlier start.
 
@@ -436,41 +436,41 @@ STEP 10: Produce evaluator actions.
     The final return value always has both required keys.
 
 
-9. HOW PERSON 1 CONNECTS WITH THE OTHER PARTS
+9. HOW DAVID CONNECTS WITH THE OTHER PARTS
 ---------------------------------------------
-PERSON 2: Flight ordering
+NOAH: Flight ordering
     Used function:
-        person2.flight_order.order_waiting_flights
+        noah.flight_order.order_waiting_flights
 
-    Person 1 supplies flight data and safe-option counts. Person 2 supplies the
+    David supplies flight data and safe-option counts. Noah supplies the
     order used to build the initial joint plan. This puts emergencies and
     constrained flights ahead of flexible flights instead of allowing an early
     flexible flight to consume their only gate.
 
-    Best-fit also uses Person 2's compatibility, gate-counting, and ordering
+    Best-fit also uses Noah's compatibility, gate-counting, and ordering
     utilities through the root flight_order.py compatibility imports.
 
-PERSON 3: Safe gate choices and gate-level costs
+YUJI: Safe gate choices and gate-level costs
     Used function:
-        person3.gate_choice.rank_gate_choices
+        yuji.gate_choice.rank_gate_choices
 
-    Person 1 asks for all ranked gate choices, not just choose_gate's single
+    David asks for all ranked gate choices, not just choose_gate's single
     answer. The joint optimizer needs all safe alternatives for one-flight and
-    two-flight search. Person 3 supplies safe flags, rejection reasons,
+    two-flight search. Yuji supplies safe flags, rejection reasons,
     walking cost, premium-gate cost, and other gate-choice diagnostics.
 
-PERSON 4: Disruption assessment
+DANNY: Disruption assessment
     Used function:
-        person4.disruption_repair.assess_changed_flights
+        danny.disruption_repair.assess_changed_flights
 
-    Person 1 uses the result to determine whether a changed flight's current
+    David uses the result to determine whether a changed flight's current
     gate can remain in consideration. The main solution does not directly call
-    Person 4's separate repair_changed_flights function; the recovery planner performs the
-    alternative recovery planning. Person 4's standalone repair entry points
+    Danny's separate repair_changed_flights function; the recovery planner performs the
+    alternative recovery planning. Danny's standalone repair entry points
     still exist for the other solution modules.
 
 BEST-FIT: Second planner and recovery fallback
-    person1.recovery_planner.decide first attempts a joint repair of changed flights
+    david.recovery_planner.decide first attempts a joint repair of changed flights
     and relevant incumbents. Every complete repair candidate is checked for a
     legal reassignment sequence, so a cheaper cyclic plan cannot displace all
     sequenceable alternatives. If the component is too large or no sequenceable
@@ -486,20 +486,20 @@ GMS: Shared project rules
     gms.compat.hard_compatible checks physical/type rules.
     gms.occupancy provides interval-conflict checks.
 
-These shared helpers keep Person 1 aligned with the evaluator's domain rules.
+These shared helpers keep David aligned with the evaluator's domain rules.
 
 10. EXAMPLES OF THE CODE SOLVING A PROBLEM
 ------------------------------------------
 EXAMPLE A: Several flights arrive in one planning wave
-    Person 2 identifies a flight with only one usable gate and places it before
-    a flexible flight. Person 3 supplies safe alternatives and their costs.
+    Noah identifies a flight with only one usable gate and places it before
+    a flexible flight. Yuji supplies safe alternatives and their costs.
     The joint optimizer chooses non-overlapping gates and can still improve
     the initial choices with a one-flight move or pair exchange.
 
 EXAMPLE B: A delay creates a new conflict
     Two flights may initially use D1 at different times. After a delay, their
     intervals overlap. The evaluator places the affected flight in
-    changed_flights. Person 1 merges its new profile and asks Person 4 whether
+    changed_flights. David merges its new profile and asks Danny whether
     the old gate is still safe. The joint candidate and recovery candidate are
     both constructed, and the lower-heuristic-cost action list is returned.
 
@@ -517,7 +517,7 @@ EXAMPLE C: One move must clear space for another
 
 EXAMPLE D: An equipment upgrade invalidates a gate
     The new wingspan or jetbridge requirement is merged into the working
-    profile. Person 4 marks the old gate unsafe if it violates a hard rule.
+    profile. Danny marks the old gate unsafe if it violates a hard rule.
     Safe alternatives are considered by the planners, and the recovery planner remains
     available when the stability-first candidate cannot relocate enough
     incumbents to recover by itself.
@@ -532,7 +532,7 @@ EXAMPLE E: A gate outage occurs
 11. WHY THIS DESIGN HELPS THE OVERALL SOLUTION
 ----------------------------------------------
 Feasibility first
-    Unsafe Person 3 choices are removed before optimization, and joint
+    Unsafe Yuji choices are removed before optimization, and joint
     conflicts are checked again as flights are placed.
 
 Better coverage
@@ -575,15 +575,15 @@ Deterministic and dependency-free planning
 - The outage-history cost is only a risk heuristic. The algorithm does not
   predict future messages or know about disruptions before they are supplied.
 
-- Person 1 is stateless between evaluator calls. Any information not present
+- David is stateless between evaluator calls. Any information not present
   in the current observation is not available to the decision.
 
 - The evaluator is authoritative. A planner's internal safe flag or estimated
   cost does not override evaluator validation.
 
-13. RUNNING AND TESTING PERSON 1
+13. RUNNING AND TESTING DAVID
 --------------------------------
-Run commands from the repository root, not from inside person1.
+Run commands from the repository root, not from inside david.
 
 Basic scenario:
     python evaluator.py --scenario flight_data/simple.json --solution solution
@@ -618,10 +618,10 @@ promise that every hidden scenario will produce the same score.
 
 14. SHORT EXPLANATION FOR A PRESENTATION
 ----------------------------------------
-"Person 1 is the integration and optimization layer. At every event, I merge
-updated flight information, ask Person 4 whether changed gates remain safe,
-and build two complete candidate action lists. The first uses Person 2's
-priority and scarcity ordering together with Person 3's safe gate rankings,
+"David is the integration and optimization layer. At every event, I merge
+updated flight information, ask Danny whether changed gates remain safe,
+and build two complete candidate action lists. The first uses Noah's
+priority and scarcity ordering together with Yuji's safe gate rankings,
 then improves a joint plan with single-flight moves and two-flight exchanges.
 The second is an internal recovery planner that handles less restrictive recovery.
 I replay and validate both candidates, compare the safe ones with the project's
@@ -630,4 +630,4 @@ reassignments. The joint approach reduces conflicts and unnecessary movement
 while preserving low walking costs and enough flexibility to recover from
 delays, equipment changes, and outages."
 
-END OF PERSON 1 CODE GUIDE
+END OF DAVID CODE GUIDE

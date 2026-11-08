@@ -1,6 +1,6 @@
 # Part 1: coordinated gate planning
 
-The evaluator calls `person1.solution_team.decide(observation)` at each event
+The evaluator calls `david.solution_team.decide(observation)` at each event
 time. The evaluator-facing return format remains:
 
 ```python

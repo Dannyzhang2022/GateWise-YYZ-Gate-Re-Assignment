@@ -28,7 +28,7 @@ from gms.messages import FlightStore, parse_gate_outage, OUTAGE_OPEN_END, make_f
 from gms.profile import flight_profile
 from gms.occupancy import sets_conflict, intervals_overlap
 from gms.compat import hard_compatible, is_premium_misuse
-from person3.gate_choice import rank_gate_choices
+from yuji.gate_choice import rank_gate_choices
 from gms.scoring import ScoreCard, HardFailure
 
 

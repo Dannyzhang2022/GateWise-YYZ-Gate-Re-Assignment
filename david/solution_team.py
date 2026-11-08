@@ -1,4 +1,4 @@
-﻿"""Person 1: coordinate joint gate planning and disruption recovery."""
+"""David: coordinate joint gate planning and disruption recovery."""
 
 from copy import deepcopy
 import logging
@@ -194,8 +194,8 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
 
     team_actions = None
     try:
-        from person1.plan_optimizer import plan_joint_assignments
-        from person4.disruption_repair import assess_changed_flights
+        from david.plan_optimizer import plan_joint_assignments
+        from danny.disruption_repair import assess_changed_flights
 
         candidate_ids = set(assigned) | set(waiting)
         disruption_status = assess_changed_flights(
@@ -217,7 +217,7 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
 
     recovery_actions = None
     try:
-        from person1.recovery_planner import decide as recovery_decide
+        from david.recovery_planner import decide as recovery_decide
 
         recovery_actions = recovery_decide(observation)
     except Exception:  # Preserve the other candidate if one planner crashes.
