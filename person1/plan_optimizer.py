@@ -192,7 +192,7 @@ def plan_joint_assignments(
             usable[gate_id] = safe_choice
         options[flight_id] = usable
         # Prefer domestic gates in this stability-first candidate. The
-        # coordinator's best-fit fallback retains international alternatives
+        # coordinator's recovery planner retains international alternatives
         # when joint occupancy makes them necessary for a feasible plan.
         if flight.get("category") == DOMESTIC:
             d_options = {
@@ -205,7 +205,7 @@ def plan_joint_assignments(
 
         # Keep the current gate when it is compatible and outage-free. This
         # candidate deliberately favors stability; the coordinator compares it
-        # with best-fit, which handles repairs that require moving incumbents.
+        # with the recovery planner, which handles repairs that require moving incumbents.
         if current_gate is not None and current_gate in gates:
             gate = gates[current_gate]
             compatible, _ = hard_compatible(

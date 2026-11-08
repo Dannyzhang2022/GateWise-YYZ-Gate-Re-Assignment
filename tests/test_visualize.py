@@ -13,7 +13,7 @@ from visualize import _TEMPLATE, generate, list_scenarios, list_solutions, serve
 
 
 def test_record_mode_returns_a_trace(static_path):
-    result = run_sim(static_path, scenario_path("gate_outage"), "solution_bestfit",
+    result = run_sim(static_path, scenario_path("gate_outage"), "solution",
                      verbose=False, record=True)
     trace = result["trace"]
     assert [g["id"] for g in trace["gates"]]          # gate metadata present
@@ -77,7 +77,7 @@ def test_generate_writes_self_contained_html(static_path):
     fd, path = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
-        out, result = generate(static_path, scenario_path("gate_outage"), "solution_bestfit", path)
+        out, result = generate(static_path, scenario_path("gate_outage"), "solution", path)
         html = open(out, encoding="utf-8").read()
         # embedded mode payload must be valid JSON and self-contained (server: false)
         m = re.search(r"const MODE = (\{.*?\});", html, re.S)
@@ -136,7 +136,7 @@ def test_server_index_and_scenarios(static_path):
 def test_server_run_executes_real_solution(static_path):
     _start_server(8852)
     status, data = _get_json(
-        "http://127.0.0.1:8852/api/run?scenario=gate_outage&solution=solution_bestfit")
+        "http://127.0.0.1:8852/api/run?scenario=gate_outage&solution=solution")
     assert status == 200
     assert data["trace"]["result"]["status"] == "OK"
 

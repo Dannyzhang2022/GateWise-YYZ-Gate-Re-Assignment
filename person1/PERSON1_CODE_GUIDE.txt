@@ -17,7 +17,7 @@ The main goals are to:
 - Consider flights together instead of making unrelated greedy decisions.
 - Avoid gate conflicts, including conflicts created during a sequence of moves.
 - Reduce walking distance, premium-gate misuse, unassigned flights, and moves.
-- Compare the joint plan with a second, stable best-fit plan before answering.
+- Compare the joint plan with an internal recovery plan before answering.
 
 The evaluator remains the final authority on whether an answer is valid and
 what score it receives. Person 1 builds candidate answers; it does not modify
@@ -32,7 +32,7 @@ person1/__init__.py
 
 person1/solution_team.py
     The main Person 1 entry point. It prepares the observation, asks Person 4
-    for disruption status, runs the joint optimizer and best-fit fallback,
+    for disruption status, runs the joint optimizer and recovery planner,
     compares their heuristic costs, and returns one action list.
 
 person1/plan_optimizer.py
@@ -53,8 +53,8 @@ solution_team.py (repository root, not the one inside person1)
     Imports decide from person1.solution_team. This keeps the evaluator command
     simple while the implementation remains in the Person 1 folder.
 
-solution_bestfit.py
-    The second planner used by Person 1 as a comparison and recovery fallback.
+person1/recovery_planner.py
+    The internal alternate planner used by Person 1 as a comparison and recovery fallback.
     It is especially important for repairs that require moving incumbents or
     considering gate alternatives removed by the stability-first candidate.
 
@@ -75,7 +75,7 @@ The call flow is:
             -> person1.plan_optimizer.plan_joint_assignments(...)
                -> person2.flight_order.order_waiting_flights(...)
                -> person3.gate_choice.rank_gate_choices(...)
-            -> solution_bestfit.decide(observation)
+            -> person1.recovery_planner.decide(observation)
             -> replay both candidates with _actions_are_safe(...)
             -> person1.solution_team._heuristic_cost(...) for each safe candidate
             -> return the lower-cost safe candidate
@@ -164,7 +164,7 @@ This is the public function called by the evaluator. Its workflow is:
 
 STEP 1: Import the two planners.
     plan_joint_assignments supplies the team/joint candidate.
-    bestfit_decide supplies the stable fallback candidate.
+    recovery_decide supplies the alternate candidate.
     The imports are local to decide, so they occur when a decision is requested.
 
 STEP 2: Copy working data.
@@ -198,8 +198,8 @@ STEP 6: Build the team candidate.
     plan_joint_assignments receives gates, outages, bookings, assigned flights,
     waiting flights, changed flights, disruption status, and current time.
 
-STEP 7: Build the best-fit candidate.
-    bestfit_decide receives the original observation. It independently repairs
+STEP 7: Build the recovery candidate.
+    recovery_decide receives the original observation. It independently repairs
     changed flights and assigns waiters.
 
 STEP 8: Isolate planner failures and validate candidates.
@@ -465,12 +465,12 @@ PERSON 4: Disruption assessment
 
     Person 1 uses the result to determine whether a changed flight's current
     gate can remain in consideration. The main solution does not directly call
-    Person 4's separate repair_changed_flights function; best-fit performs the
+    Person 4's separate repair_changed_flights function; the recovery planner performs the
     alternative recovery planning. Person 4's standalone repair entry points
     still exist for the other solution modules.
 
 BEST-FIT: Second planner and recovery fallback
-    solution_bestfit.decide first attempts a joint repair of changed flights
+    person1.recovery_planner.decide first attempts a joint repair of changed flights
     and relevant incumbents. Every complete repair candidate is checked for a
     legal reassignment sequence, so a cheaper cyclic plan cannot displace all
     sequenceable alternatives. If the component is too large or no sequenceable
@@ -500,7 +500,7 @@ EXAMPLE B: A delay creates a new conflict
     Two flights may initially use D1 at different times. After a delay, their
     intervals overlap. The evaluator places the affected flight in
     changed_flights. Person 1 merges its new profile and asks Person 4 whether
-    the old gate is still safe. The joint candidate and best-fit candidate are
+    the old gate is still safe. The joint candidate and recovery candidate are
     both constructed, and the lower-heuristic-cost action list is returned.
 
     The coordinator does not delete a necessary repair just because the
@@ -518,7 +518,7 @@ EXAMPLE C: One move must clear space for another
 EXAMPLE D: An equipment upgrade invalidates a gate
     The new wingspan or jetbridge requirement is merged into the working
     profile. Person 4 marks the old gate unsafe if it violates a hard rule.
-    Safe alternatives are considered by the planners, and best-fit remains
+    Safe alternatives are considered by the planners, and the recovery planner remains
     available when the stability-first candidate cannot relocate enough
     incumbents to recover by itself.
 
@@ -536,7 +536,7 @@ Feasibility first
     conflicts are checked again as flights are placed.
 
 Better coverage
-    Scarcity ordering, pair search, high unassigned costs, and best-fit recovery
+    Scarcity ordering, pair search, high unassigned costs, and recovery planning
     reduce the chance of leaving flights without gates when a valid plan exists.
 
 Operational stability
@@ -623,7 +623,7 @@ updated flight information, ask Person 4 whether changed gates remain safe,
 and build two complete candidate action lists. The first uses Person 2's
 priority and scarcity ordering together with Person 3's safe gate rankings,
 then improves a joint plan with single-flight moves and two-flight exchanges.
-The second is a stable best-fit planner that handles less restrictive recovery.
+The second is an internal recovery planner that handles less restrictive recovery.
 I replay and validate both candidates, compare the safe ones with the project's
 scoring weights, and return one structure of first-time assignments and ordered
 reassignments. The joint approach reduces conflicts and unnecessary movement

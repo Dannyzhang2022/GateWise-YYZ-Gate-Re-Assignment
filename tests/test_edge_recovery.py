@@ -5,7 +5,7 @@ from copy import deepcopy
 import pytest
 
 from solution import decide as team_decide
-from solution_bestfit import decide as bestfit_decide
+from person1.recovery_planner import decide as recovery_decide
 
 
 def gate(span=60, dist=100):
@@ -100,7 +100,7 @@ def test_malformed_interval_is_not_assigned_by_either_planner():
     empty = {"assignments": [], "reassignments": []}
 
     assert team_decide(obs) == empty
-    assert bestfit_decide(obs) == empty
+    assert recovery_decide(obs) == empty
 
 
 def simple_waiting_observation():
@@ -109,7 +109,7 @@ def simple_waiting_observation():
     return obs
 
 
-def test_joint_optimizer_crash_does_not_block_bestfit(monkeypatch):
+def test_joint_optimizer_crash_does_not_block_recovery_planner(monkeypatch):
     import person1.plan_optimizer as optimizer
 
     def fail(**_kwargs):
@@ -121,13 +121,13 @@ def test_joint_optimizer_crash_does_not_block_bestfit(monkeypatch):
     assert actions["assignments"] == [("A", "D1")]
 
 
-def test_bestfit_crash_does_not_block_joint_optimizer(monkeypatch):
-    import solution_bestfit
+def test_recovery_planner_crash_does_not_block_joint_optimizer(monkeypatch):
+    import person1.recovery_planner as recovery_planner
 
     def fail(_observation):
-        raise RuntimeError("synthetic best-fit failure")
+        raise RuntimeError("synthetic recovery planner failure")
 
-    monkeypatch.setattr(solution_bestfit, "decide", fail)
+    monkeypatch.setattr(recovery_planner, "decide", fail)
     actions = team_decide(simple_waiting_observation())
 
     assert actions["assignments"] == [("A", "D1")]
@@ -148,7 +148,7 @@ def test_unchanged_changed_booking_uses_new_intervals_for_waiters():
     change(obs, "A", profile(intervals=((100, 200),)))
     obs["waiting_flights"]["B"] = profile(intervals=((150, 170),))
 
-    actions = bestfit_decide(obs)
+    actions = recovery_decide(obs)
 
     assert actions["reassignments"] == []
     assert actions["assignments"] == [("B", "D2")]

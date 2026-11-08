@@ -1,4 +1,4 @@
-"""Cost-aware gate assignment with a small exact search per decision wave.
+"""Internal recovery planner with a small exact search per decision wave.
 
 The evaluator's standing penalties are the objective for new placements:
 walking distance and domestic use of an international gate. Existing plans are

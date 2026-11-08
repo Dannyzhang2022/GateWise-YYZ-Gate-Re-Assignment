@@ -26,7 +26,7 @@ overlaps and outages before accepting a gate, and orders reassignments so each
 move's destination is clear when the evaluator applies it. If no safe gate is
 available for a waiting flight, it is left unassigned.
 
-The coordinator compares this candidate with the stable best-fit fallback.
+The coordinator compares this candidate with the internal recovery planner.
 Best-fit uses exact wave search for up to four waiting flights and the
 scarcity-aware greedy planner for larger waves, avoiding factorial runtimes.
 Reassignments from either planner are kept intact: removing a locally optional

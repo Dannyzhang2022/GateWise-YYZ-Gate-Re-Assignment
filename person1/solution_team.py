@@ -213,38 +213,38 @@ def decide(observation: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
             current_time=observation.get("time"),
         )
     except Exception:  # Isolate the optional optimizer from the recovery path.
-        logger.exception("Joint optimizer failed; trying best-fit recovery")
+        logger.exception("Joint optimizer failed; trying the recovery planner")
 
-    bestfit_actions = None
+    recovery_actions = None
     try:
-        from solution_bestfit import decide as bestfit_decide
+        from person1.recovery_planner import decide as recovery_decide
 
-        bestfit_actions = bestfit_decide(observation)
+        recovery_actions = recovery_decide(observation)
     except Exception:  # Preserve the other candidate if one planner crashes.
-        logger.exception("Best-fit planner failed; trying joint optimizer recovery")
+        logger.exception("Recovery planner failed; trying joint optimizer recovery")
 
     team_safe = team_actions is not None and _actions_are_safe(
         team_actions, observation
     )
-    bestfit_safe = bestfit_actions is not None and _actions_are_safe(
-        bestfit_actions, observation
+    recovery_safe = recovery_actions is not None and _actions_are_safe(
+        recovery_actions, observation
     )
     if not team_safe and team_actions is not None:
         logger.debug("Rejected unsafe joint-optimizer candidate")
-    if not bestfit_safe and bestfit_actions is not None:
-        logger.debug("Rejected unsafe best-fit candidate")
+    if not recovery_safe and recovery_actions is not None:
+        logger.debug("Rejected unsafe recovery-planner candidate")
 
-    if team_safe and bestfit_safe:
+    if team_safe and recovery_safe:
         # Preserve dependent moves: pruning one can invalidate the whole plan.
-        if _heuristic_cost(bestfit_actions, observation) < _heuristic_cost(
+        if _heuristic_cost(recovery_actions, observation) < _heuristic_cost(
             team_actions, observation
         ):
-            return bestfit_actions
+            return recovery_actions
         return team_actions
     if team_safe:
         return team_actions
-    if bestfit_safe:
-        return bestfit_actions
+    if recovery_safe:
+        return recovery_actions
 
     if changed:
         raise RuntimeError(
