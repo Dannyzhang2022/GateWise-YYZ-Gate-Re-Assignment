@@ -6,6 +6,8 @@ kept stable unless a flight's updated requirements or an outage invalidates its
 gate, since voluntary moves incur an additional evaluator penalty.
 """
 
+from math import isfinite
+
 from flight_order import compatible, count_compatible_gates, order_waiting_flights
 from gms.config import DOMESTIC, INTERNATIONAL, WEIGHTS
 
@@ -19,6 +21,25 @@ def _overlap(a, b):
     return a[0] < b[1] and b[0] < a[1]
 
 
+def _valid_intervals(intervals):
+    """Return whether occupancy is a nonempty list of finite half-open windows."""
+    if not isinstance(intervals, (list, tuple)) or not intervals:
+        return False
+    for interval in intervals:
+        if not isinstance(interval, (list, tuple)) or len(interval) != 2:
+            return False
+        start, end = interval
+        if (
+            isinstance(start, bool) or isinstance(end, bool)
+            or not isinstance(start, (int, float))
+            or not isinstance(end, (int, float))
+            or not isfinite(start) or not isfinite(end)
+            or start >= end
+        ):
+            return False
+    return True
+
+
 def _blocked(gid, intervals, local, outages, exclude=None):
     for booking in local.get(gid, []):
         if booking["flight_id"] == exclude:
@@ -30,6 +51,8 @@ def _blocked(gid, intervals, local, outages, exclude=None):
 
 
 def _usable_gates(flight, gates, local, outages, exclude=None, skip=None):
+    if not _valid_intervals(flight.get("intervals")):
+        return {}
     return {
         gid: gate for gid, gate in gates.items()
         if gid != skip
@@ -195,14 +218,62 @@ def _repair_changed_flights(observation, gates, local, outages):
     }
     best_key = None
     best_plan = None
+    best_reassignments = None
+    best_local = None
     now = observation.get("time", 0)
 
+    def sequence(plan):
+        """Return legal moves and final occupancy, or reject a cyclic plan."""
+        work = {gid: list(bookings) for gid, bookings in local.items()}
+        pending = {
+            fid: gid for fid, gid in plan.items()
+            if gid != assigned[fid]["gate_id"]
+        }
+        reassignments = []
+        while pending:
+            ready = None
+            for fid, gid in pending.items():
+                if not _blocked(
+                    gid, profiles[fid]["intervals"], work, outages, exclude=fid
+                ):
+                    ready = fid
+                    break
+            if ready is None:
+                return None, None
+            fid = ready
+            old_gid, new_gid = assigned[fid]["gate_id"], pending.pop(fid)
+            reassignments.append((fid, new_gid))
+            work[old_gid] = [
+                b for b in work.get(old_gid, []) if b["flight_id"] != fid
+            ]
+            work.setdefault(new_gid, []).append({
+                "flight_id": fid, "intervals": profiles[fid]["intervals"]
+            })
+
+        # Changed flights that stayed at their current gate also need their new
+        # intervals reflected before waiting flights are planned against `work`.
+        for gid, bookings in work.items():
+            work[gid] = [
+                b for b in bookings if b["flight_id"] not in component
+            ]
+        for fid, gid in plan.items():
+            work.setdefault(gid, []).append({
+                "flight_id": fid, "intervals": profiles[fid]["intervals"]
+            })
+        return reassignments, work
+
     def search(remaining, work, plan, cost):
-        nonlocal best_key, best_plan
+        nonlocal best_key, best_plan, best_reassignments, best_local
         if not remaining:
+            reassignments, final_work = sequence(plan)
+            if reassignments is None:
+                return
             key = (cost, tuple(sorted(plan.items())))
             if best_key is None or key < best_key:
-                best_key, best_plan = key, dict(plan)
+                best_key = key
+                best_plan = dict(plan)
+                best_reassignments = reassignments
+                best_local = final_work
             return
 
         counts = {
@@ -239,34 +310,7 @@ def _repair_changed_flights(observation, gates, local, outages):
     search(set(component), {gid: list(bookings) for gid, bookings in fixed.items()}, {}, 0.0)
     if best_plan is None:
         return None, local
-
-    # The evaluator applies reassignments one at a time. Emit moves only when
-    # their destination has been cleared by earlier moves in this same plan.
-    work = {gid: list(bookings) for gid, bookings in local.items()}
-    pending = {
-        fid: gid for fid, gid in best_plan.items()
-        if gid != assigned[fid]["gate_id"]
-    }
-    reassignments = []
-    while pending:
-        ready = None
-        for fid, gid in pending.items():
-            if not _blocked(gid, profiles[fid]["intervals"], work, outages, exclude=fid):
-                ready = fid
-                break
-        if ready is None:
-            return None, local  # a cyclic swap needs a temporary gate
-        fid = ready
-        old_gid, new_gid = assigned[fid]["gate_id"], pending.pop(fid)
-        reassignments.append((fid, new_gid))
-        work[old_gid] = [b for b in work.get(old_gid, []) if b["flight_id"] != fid]
-        work.setdefault(new_gid, []).append(
-            {"flight_id": fid, "intervals": profiles[fid]["intervals"]}
-        )
-
-    local.clear()
-    local.update(work)
-    return reassignments, local
+    return best_reassignments, best_local
 
 
 def decide(observation):

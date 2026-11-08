@@ -31,3 +31,10 @@ Best-fit uses exact wave search for up to four waiting flights and the
 scarcity-aware greedy planner for larger waves, avoiding factorial runtimes.
 Reassignments from either planner are kept intact: removing a locally optional
 move can break a dependent move or leave a changed flight in an invalid gate.
+
+Planner exceptions are isolated so one failure cannot block the other planner.
+Before selection, each candidate is replayed against a copied observation to
+validate intervals, compatibility, outages, occupancy, move order, and changed
+flight postconditions. Best-fit skips cyclic repair candidates and retains the
+cheapest sequenceable alternative. If neither planner can safely recover a
+changed flight, the coordinator raises an explicit recovery error.

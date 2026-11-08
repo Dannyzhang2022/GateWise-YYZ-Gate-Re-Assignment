@@ -1,0 +1,633 @@
+PERSON 1 CODE GUIDE
+Coordinated gate planning and disruption recovery
+=================================================
+
+1. WHAT PERSON 1 IS RESPONSIBLE FOR
+----------------------------------
+Person 1 is the coordinator of the team solution. It does not replace the
+flight-ordering, gate-ranking, or disruption-assessment work written by the
+other teammates. Instead, it combines those components into one decision at
+each evaluator event time.
+
+The main goals are to:
+
+- Give every waiting flight a safe gate whenever capacity permits.
+- Keep existing assignments stable when they are still valid.
+- Repair assignments affected by delays, equipment changes, or gate outages.
+- Consider flights together instead of making unrelated greedy decisions.
+- Avoid gate conflicts, including conflicts created during a sequence of moves.
+- Reduce walking distance, premium-gate misuse, unassigned flights, and moves.
+- Compare the joint plan with a second, stable best-fit plan before answering.
+
+The evaluator remains the final authority on whether an answer is valid and
+what score it receives. Person 1 builds candidate answers; it does not modify
+the evaluator or the airport state directly.
+
+
+2. FILES OWNED OR USED BY PERSON 1
+---------------------------------
+person1/__init__.py
+    Marks person1 as a Python package. Its docstring identifies the package;
+    there is no algorithm in this file.
+
+person1/solution_team.py
+    The main Person 1 entry point. It prepares the observation, asks Person 4
+    for disruption status, runs the joint optimizer and best-fit fallback,
+    compares their heuristic costs, and returns one action list.
+
+person1/plan_optimizer.py
+    The joint, stability-first optimizer. It builds safe gate options, creates
+    a scarcity-first initial plan, improves it with local search, sequences
+    reassignments, and returns assignments plus reassignments.
+
+person1/README.md
+    A short architectural summary. This TXT file is the detailed guide.
+
+Root-level files that connect Person 1 to the evaluator:
+
+solution.py
+    The normal evaluator entry point. It imports decide from the root-level
+    solution_team.py.
+
+solution_team.py (repository root, not the one inside person1)
+    Imports decide from person1.solution_team. This keeps the evaluator command
+    simple while the implementation remains in the Person 1 folder.
+
+solution_bestfit.py
+    The second planner used by Person 1 as a comparison and recovery fallback.
+    It is especially important for repairs that require moving incumbents or
+    considering gate alternatives removed by the stability-first candidate.
+
+
+3. END-TO-END CALL FLOW
+-----------------------
+The normal command is:
+
+    python evaluator.py --scenario flight_data/simple.json --solution solution
+
+The call flow is:
+
+    evaluator.py
+      -> solution.py
+        -> root solution_team.py
+          -> person1.solution_team.decide(observation)
+            -> person4.disruption_repair.assess_changed_flights(...)
+            -> person1.plan_optimizer.plan_joint_assignments(...)
+               -> person2.flight_order.order_waiting_flights(...)
+               -> person3.gate_choice.rank_gate_choices(...)
+            -> solution_bestfit.decide(observation)
+            -> replay both candidates with _actions_are_safe(...)
+            -> person1.solution_team._heuristic_cost(...) for each safe candidate
+            -> return the lower-cost safe candidate
+
+The evaluator then:
+
+1. Validates the returned structure.
+2. Applies reassignments first, in their returned order.
+3. Applies new assignments.
+4. Rechecks changed flights and all hard constraints.
+5. Continues to the next event time.
+6. Computes final soft penalties at the end of the simulation.
+
+Person 1 is stateless between calls. It does not keep a hidden airport model in
+module globals. Each decision is based on the current observation supplied by
+the evaluator.
+
+
+4. THE INPUT AND OUTPUT CONTRACTS
+--------------------------------
+The important observation fields are:
+
+time
+    Current absolute time in minutes.
+
+gates
+    Mapping of gate ID to gate properties: gate_type, max_wingspan, dist, and
+    jetbridge.
+
+gate_outages
+    Mapping of gate ID to unavailable time windows.
+
+waiting_flights
+    Flights that currently have no gate and need a first assignment.
+
+assigned_flights
+    Flights that already have gates. Their views include gate_id.
+
+changed_flights
+    Assigned flights affected by new information. Each record contains the
+    current gate_id, the old profile, the new profile, and a reason.
+
+gate_assignments
+    Current occupancy records by gate. Each booking contains a flight_id and
+    its occupancy intervals.
+
+ac_info
+    Aircraft reference information supplied by the evaluator. Person 1 mostly
+    works with the already-derived flight views instead of recalculating them.
+
+A flight's intervals describe when it physically occupies a gate. Intervals
+are half-open: [start, end). Therefore, one booking ending at 600 and another
+starting at 600 do not overlap. A flight can have multiple intervals if it
+leaves YYZ and later returns.
+
+Important flight fields include:
+
+- category: 0 = cargo, 1 = domestic, 2 = international.
+- wingspan: used to check the gate's physical limit.
+- jetbridge_required: whether a jetbridge is mandatory.
+- intervals: all gate-occupancy windows.
+- priority: identifies an emergency/priority flight when supplied.
+- delay_minutes: optional metadata used by Person 2 as a tie-breaker.
+- gate_id: present for an already-assigned flight.
+
+Person 1 must return:
+
+    {
+        "assignments": [(flight_id, gate_id), ...],
+        "reassignments": [(flight_id, gate_id), ...]
+    }
+
+Use assignments for a flight receiving its first gate. Use reassignments for a
+flight moving from an existing gate. Returning a currently assigned flight in
+the assignments list would be invalid.
+
+5. solution_team.py: THE COORDINATOR
+------------------------------------
+There are four functions in this file: the public coordinator, a scoring
+helper, and two validation helpers.
+
+
+5.1 decide(observation)
+~~~~~~~~~~~~~~~~~~~~~~~
+This is the public function called by the evaluator. Its workflow is:
+
+STEP 1: Import the two planners.
+    plan_joint_assignments supplies the team/joint candidate.
+    bestfit_decide supplies the stable fallback candidate.
+    The imports are local to decide, so they occur when a decision is requested.
+
+STEP 2: Copy working data.
+    deepcopy is used for outages, bookings, waiting flights, and assigned
+    flights. Planning must not accidentally mutate the evaluator's observation
+    or nested booking records.
+
+STEP 3: Merge changed-flight profiles.
+    For every changed flight, the coordinator copies change["new"] into its
+    working assigned-flight view and preserves the current gate_id. This makes
+    the optimizer evaluate the new intervals, category, wingspan, and jetbridge
+    requirement rather than the obsolete profile.
+
+STEP 4: Build the set of planning flight IDs.
+    candidate_ids contains every assigned and waiting flight in this decision.
+    These flights are variables in the joint plan, not immovable bookings.
+
+STEP 5: Ask Person 4 for disruption status.
+    assess_changed_flights returns, for each changed flight:
+
+        current_gate
+        current_gate_safe
+        reason
+
+    A current gate can be unsafe because it is unknown, incompatible with the
+    new aircraft/profile, blocked by an outage, or blocked by a fixed booking.
+    Other flights in candidate_ids are ignored during this assessment because
+    the joint planner will check their final mutual occupancy.
+
+STEP 6: Build the team candidate.
+    plan_joint_assignments receives gates, outages, bookings, assigned flights,
+    waiting flights, changed flights, disruption status, and current time.
+
+STEP 7: Build the best-fit candidate.
+    bestfit_decide receives the original observation. It independently repairs
+    changed flights and assigns waiters.
+
+STEP 8: Isolate planner failures and validate candidates.
+    Each planner runs inside its own exception boundary. If one raises an
+    exception, the error is logged and the other planner can still supply a
+    candidate. _actions_are_safe then replays each candidate against a copied
+    observation. Unsafe action sequences are rejected instead of being scored.
+
+STEP 9: Compare and return.
+    _heuristic_cost is calculated for both safe candidates. Best-fit wins only
+    when its heuristic cost is strictly lower. A tie returns the team candidate.
+    If only one candidate is safe, it is returned. If neither is safe, waiting
+    flights are left unassigned; unrecovered changed flights raise an explicit
+    recovery error.
+
+
+5.2 _heuristic_cost(actions, observation)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This function produces a relative planning estimate. It is not the evaluator's
+final ScoreCard and does not simulate the rest of the day.
+
+It first combines the candidate's assignments and reassignments into one
+flight-to-gate mapping. For each flight in that mapping, it adds:
+
+- Gate distance multiplied by walking_distance_per_m.
+- The domestic-at-international-gate penalty when category 1 uses gate type 2.
+- A reassignment-after-arrival penalty if occupancy has already begun.
+- Otherwise, a normal reassignment penalty for a non-changed flight.
+
+It then adds emergency or normal unassigned penalties for flights absent from
+that mapping.
+
+IMPORTANT DETAIL: this is an action-oriented approximation. An unchanged
+assigned flight is not inserted into the local mapping unless it appears in
+the candidate's actions, so it can be counted by the final unassigned loop.
+The function therefore must not be described as an exact final-state score.
+Its role is to compare two candidates under the same observation. Full
+scenario evaluation is still required to judge real quality.
+
+
+5.3 _valid_intervals and _actions_are_safe
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+_valid_intervals accepts only nonempty collections of finite, increasing
+(start, end) windows. This prevents malformed or reversed occupancy from being
+assigned by the recovery planner.
+
+_actions_are_safe is an independent final safety gate. It validates the action
+structure, applies reassignments in order and then assignments, checks aircraft
+and gate compatibility, rejects outage/flight conflicts, and rechecks every
+changed flight. It updates changed bookings to their new intervals during the
+post-decision phase. Its input observation is never mutated.
+
+
+5.4 Why returned moves are not pruned
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+A move that looks optional for one flight may be required by the whole plan.
+For example, moving flight B out of D2 can clear D2 for flight A. Removing B's
+move would make A's later reassignment invalid. A changed flight can also
+conflict with another booking even when its aircraft still physically fits
+its current gate.
+
+Therefore, the coordinator preserves the action sequence produced by either
+planner instead of deleting individually "unnecessary" reassignments.
+
+
+6. COSTS AND HARD RULES USED BY THE PLANNER
+------------------------------------------
+The project uses these evaluator weights from gms.config.WEIGHTS:
+
+    Normal reassignment                  10
+    Reassignment after arrival           50
+    Domestic at international gate        5
+    Walking distance                  0.01 per distance unit
+    Normal unassigned flight             100
+    Emergency unassigned flight          300
+
+Lower cost is better. Hard failures are separate from soft score.
+
+The hard rules include:
+
+- No overlapping occupancy at the same gate.
+- No assignment during an overlapping gate outage.
+- Wingspan must not exceed max_wingspan.
+- A flight requiring a jetbridge must use a jetbridge gate.
+- Cargo flights require cargo gates.
+- International flights require international gates.
+- Domestic flights may use domestic or international gates, but international
+  use receives a soft premium-gate penalty.
+
+Person 1 combines these constraints with optimization. It does not treat a
+low-cost but unsafe gate as a valid choice.
+
+7. plan_optimizer.py: HELPER FUNCTIONS
+--------------------------------------
+_overlap(a, b)
+    Returns whether two intervals overlap using half-open interval semantics.
+    It is used when checking an existing gate against outage windows.
+
+_flight_cost(...)
+    Adds Person 1's planning costs to a safe Person 3 gate choice.
+
+    It starts with walking distance and domestic-at-international cost. It does
+    not simply reuse Person 3's total score because Person 1 applies its own
+    changed-flight and stability policy.
+
+    For a future flight, a gate with an earlier outage receives a risk proxy
+    equal to the after-arrival reassignment weight. This discourages choosing a
+    previously disrupted gate when a better alternative exists. It is a
+    heuristic risk estimate, not a prediction that another outage must occur.
+
+    For an actual gate move:
+    - A changed flight that has arrived receives the finite 50-point move cost.
+    - An arrived, non-changed incumbent receives infinite cost in this
+      candidate. This prevents the joint candidate from destabilizing arrived
+      aircraft. Best-fit can still move such an incumbent if recovery needs it.
+    - A non-changed flight moved before arrival receives the normal 10-point
+      reassignment cost.
+    - A changed flight moved before arrival avoids that voluntary-move charge,
+      matching the evaluator's treatment of airport-driven changes.
+
+_conflicts(flight_id, gate_id, assignment, flights, ignored_ids=())
+    Checks the candidate flight's intervals against every flight currently
+    assigned to the same candidate gate in the working joint plan. It skips the
+    flight itself and any IDs in ignored_ids. Pair search uses ignored_ids to
+    check two flights without treating their old placements as fixed blockers.
+
+_solution_cost(assignment, options, unassigned_costs)
+    Sums the total_cost of each selected gate. A value of None means no gate
+    was selected, so the flight's unassigned cost is added instead.
+
+_sequence_reassignments(assignment, flights, current_gates, bookings)
+    Converts a final joint plan into an order the evaluator can legally apply.
+    A move is ready only when its destination currently has no overlapping
+    booking. After selecting a ready move, the helper updates its local
+    occupancy and continues.
+
+    If no remaining move has a clear destination, it returns None. This
+    identifies a cyclic dependency that cannot be applied atomically. The main
+    optimizer then tries to restore safe current placements for non-changed
+    flights and sequences the plan again.
+
+
+8. plan_joint_assignments: THE JOINT ALGORITHM
+---------------------------------------------
+This is the main public function in plan_optimizer.py. Its keyword-only inputs
+make the coordinator's data handoff explicit.
+
+STEP 1: Build a unified flight mapping.
+    Assigned and waiting flights are copied into flights. Each receives a
+    current_time field for Person 3's cost calculations. current_gates stores
+    each assigned flight's gate and None for each waiting flight. If there are
+    no flights, the function immediately returns two empty action lists.
+
+STEP 2: Separate fixed and variable occupancy.
+    Bookings belonging to flights in the current plan are removed from
+    fixed_bookings. Otherwise, a flight's old booking could incorrectly block
+    all of its alternatives. Fixed bookings remain as hard obstacles. Mutual
+    conflicts among variable flights are handled later by _conflicts.
+
+STEP 3: Generate safe gate options with Person 3.
+    For each flight, the optimizer creates solo_bookings containing fixed
+    occupancy plus that flight's own booking. The own booking lets Person 3
+    identify the current gate while ignoring the same flight as a blocker.
+
+    rank_gate_choices checks physical compatibility, occupancy, outages, and
+    malformed data. Unsafe choices are discarded. A changed flight's current
+    gate is also discarded when Person 4 marked it unsafe.
+
+STEP 4: Add Person 1's gate costs.
+    Every safe choice receives a total_cost calculated by _flight_cost. The
+    resulting options mapping is organized as:
+
+        options[flight_id][gate_id] = choice and cost information
+
+STEP 5: Apply stability-first option policies.
+    If a domestic flight has any safe domestic options, this candidate keeps
+    those domestic options and removes international alternatives. This
+    preserves premium international capacity and avoids the 5-point penalty.
+    Best-fit still considers international gates when they are needed.
+
+    If an assigned flight's current gate is physically compatible and has no
+    overlapping outage, the candidate keeps that flight at its current gate.
+    If Person 3 did not create an entry for it, the optimizer constructs a
+    zero-move-cost entry using the gate's distance and premium status.
+
+    These policies deliberately favor operational stability. They are why the
+    coordinator must retain a less restrictive recovery planner as fallback.
+
+STEP 6: Set unassigned costs.
+    A waiting normal flight costs 100 when unassigned; a waiting priority
+    flight costs 300. An already-assigned flight receives a very large
+    sentinel cost of 1,000,000,000 because the evaluator cannot simply
+    "unassign" it through this output format. This pushes the search to repair
+    existing placements rather than dropping them.
+
+STEP 7: Create a scarcity-first initial plan.
+    Person 2 receives the unified flight mapping and the number of safe options
+    for each flight. It orders flights by emergency priority, fewer options,
+    larger delay, and earlier start.
+
+    The optimizer then visits flights in that order. Each flight's gates are
+    sorted by total_cost and then gate ID for deterministic ties. The first
+    gate that does not conflict with the growing plan is selected. If no gate
+    works, the initial value is None.
+
+STEP 8: Improve the initial plan with local search.
+    The optimizer performs at least 4 and at most 24 improvement rounds, based
+    on the number of flights. Each round searches for the best positive cost
+    reduction greater than 1e-9.
+
+    Single-flight search:
+        Try another allowed gate, or None, for one flight. Reject conflicting
+        choices and calculate the change in total solution cost.
+
+    Two-flight search:
+        Try allowed gate/None combinations for a pair. Ignore the pair's old
+        placements while checking their new alternatives, explicitly prevent
+        the pair from overlapping at one gate, and compare old and new costs.
+        This can exchange capacity or free a gate in ways a single move cannot.
+
+    Only the best improvement found in the round is applied. Search stops early
+    when no improving move exists. This is bounded local optimization, not a
+    proof of global optimality.
+
+STEP 9: Sequence reassignments.
+    _sequence_reassignments converts the selected final gates into legal moves.
+    If a cycle prevents sequencing, the optimizer tries to restore safe current
+    gates for non-changed flights and tries again.
+
+STEP 10: Produce evaluator actions.
+    Waiting flights with a selected gate go into assignments. Existing flights
+    with a different selected gate are already represented in the ordered
+    reassignments list. Flights with None are omitted and remain unassigned.
+    The final return value always has both required keys.
+
+
+9. HOW PERSON 1 CONNECTS WITH THE OTHER PARTS
+---------------------------------------------
+PERSON 2: Flight ordering
+    Used function:
+        person2.flight_order.order_waiting_flights
+
+    Person 1 supplies flight data and safe-option counts. Person 2 supplies the
+    order used to build the initial joint plan. This puts emergencies and
+    constrained flights ahead of flexible flights instead of allowing an early
+    flexible flight to consume their only gate.
+
+    Best-fit also uses Person 2's compatibility, gate-counting, and ordering
+    utilities through the root flight_order.py compatibility imports.
+
+PERSON 3: Safe gate choices and gate-level costs
+    Used function:
+        person3.gate_choice.rank_gate_choices
+
+    Person 1 asks for all ranked gate choices, not just choose_gate's single
+    answer. The joint optimizer needs all safe alternatives for one-flight and
+    two-flight search. Person 3 supplies safe flags, rejection reasons,
+    walking cost, premium-gate cost, and other gate-choice diagnostics.
+
+PERSON 4: Disruption assessment
+    Used function:
+        person4.disruption_repair.assess_changed_flights
+
+    Person 1 uses the result to determine whether a changed flight's current
+    gate can remain in consideration. The main solution does not directly call
+    Person 4's separate repair_changed_flights function; best-fit performs the
+    alternative recovery planning. Person 4's standalone repair entry points
+    still exist for the other solution modules.
+
+BEST-FIT: Second planner and recovery fallback
+    solution_bestfit.decide first attempts a joint repair of changed flights
+    and relevant incumbents. Every complete repair candidate is checked for a
+    legal reassignment sequence, so a cheaper cyclic plan cannot displace all
+    sequenceable alternatives. If the component is too large or no sequenceable
+    repair is found, a simpler forced-move pass is used. Updated occupancy is
+    then used to assign waiting flights.
+
+    Exact wave search is used for at most EXACT_WAVE_LIMIT = 4 waiters. Larger
+    waves use scarcity-aware greedy planning. This avoids factorial growth in
+    exact search while retaining exact optimization for small waves.
+
+GMS: Shared project rules
+    gms.config supplies category constants and score weights.
+    gms.compat.hard_compatible checks physical/type rules.
+    gms.occupancy provides interval-conflict checks.
+
+These shared helpers keep Person 1 aligned with the evaluator's domain rules.
+
+10. EXAMPLES OF THE CODE SOLVING A PROBLEM
+------------------------------------------
+EXAMPLE A: Several flights arrive in one planning wave
+    Person 2 identifies a flight with only one usable gate and places it before
+    a flexible flight. Person 3 supplies safe alternatives and their costs.
+    The joint optimizer chooses non-overlapping gates and can still improve
+    the initial choices with a one-flight move or pair exchange.
+
+EXAMPLE B: A delay creates a new conflict
+    Two flights may initially use D1 at different times. After a delay, their
+    intervals overlap. The evaluator places the affected flight in
+    changed_flights. Person 1 merges its new profile and asks Person 4 whether
+    the old gate is still safe. The joint candidate and best-fit candidate are
+    both constructed, and the lower-heuristic-cost action list is returned.
+
+    The coordinator does not delete a necessary repair just because the
+    aircraft still fits the gate physically. Occupancy conflicts matter too.
+
+EXAMPLE C: One move must clear space for another
+    Suppose A should move from D1 to D2, while B should move from D2 to D3.
+    A cannot move first because B still occupies D2. The sequencer emits:
+
+        B: D2 -> D3
+        A: D1 -> D2
+
+    This is why reassignment order is part of correctness, not just formatting.
+
+EXAMPLE D: An equipment upgrade invalidates a gate
+    The new wingspan or jetbridge requirement is merged into the working
+    profile. Person 4 marks the old gate unsafe if it violates a hard rule.
+    Safe alternatives are considered by the planners, and best-fit remains
+    available when the stability-first candidate cannot relocate enough
+    incumbents to recover by itself.
+
+EXAMPLE E: A gate outage occurs
+    Outage windows are checked against every occupancy interval, not just the
+    first one. An affected flight can be moved to a compatible, outage-free
+    gate. Previously outaged gates can also receive a future-risk cost when
+    the optimizer considers later flights.
+
+
+11. WHY THIS DESIGN HELPS THE OVERALL SOLUTION
+----------------------------------------------
+Feasibility first
+    Unsafe Person 3 choices are removed before optimization, and joint
+    conflicts are checked again as flights are placed.
+
+Better coverage
+    Scarcity ordering, pair search, high unassigned costs, and best-fit recovery
+    reduce the chance of leaving flights without gates when a valid plan exists.
+
+Operational stability
+    Existing gates are preserved where practical, arrived incumbents are not
+    casually reshuffled, and real reassignment penalties guide movement.
+
+Passenger and resource awareness
+    Walking distance and domestic use of international gates influence choices
+    instead of accepting the first available gate.
+
+Disruption resilience
+    New flight profiles, changed intervals, fixed bookings, and outages are
+    incorporated at each event instead of assuming the initial plan stays valid.
+
+Deterministic and dependency-free planning
+    Gate-ID tie-breaking makes results repeatable. The joint optimizer uses the
+    Python standard library and project modules; it needs no external solver.
+
+
+12. LIMITATIONS AND IMPORTANT ASSUMPTIONS
+-----------------------------------------
+- The joint optimizer is a bounded local-search heuristic. It does not
+  guarantee a globally optimal assignment.
+
+- The stability-first candidate intentionally removes some alternatives.
+  Best-fit is not optional dead code; it is needed for less restrictive repair.
+
+- _heuristic_cost compares candidate actions but is not an exact simulation of
+  final evaluator cost. Always validate changes with complete scenarios.
+
+- Some reassignment cycles still have no legal sequential representation without
+  a temporary gate. Best-fit now skips cyclic candidates and keeps the cheapest
+  sequenceable repair, but large components and unavoidable cycles can still
+  require operator intervention or a simpler incomplete fallback.
+
+- The outage-history cost is only a risk heuristic. The algorithm does not
+  predict future messages or know about disruptions before they are supplied.
+
+- Person 1 is stateless between evaluator calls. Any information not present
+  in the current observation is not available to the decision.
+
+- The evaluator is authoritative. A planner's internal safe flag or estimated
+  cost does not override evaluator validation.
+
+13. RUNNING AND TESTING PERSON 1
+--------------------------------
+Run commands from the repository root, not from inside person1.
+
+Basic scenario:
+    python evaluator.py --scenario flight_data/simple.json --solution solution
+
+Delay/conflict repair:
+    python evaluator.py --scenario flight_data/cascade_2.json --solution solution
+
+Larger wave and outage:
+    python evaluator.py --scenario flight_data/rush_hour.json --solution solution
+
+Combined schedule:
+    python evaluator.py --scenario flight_data/combined_24h.json --solution solution
+
+Seeded schedule variant:
+    python evaluator.py --scenario "additional testing/combined_24h_random_01.json" --solution solution
+
+Full automated suite:
+    python -m pytest -q
+
+The current working tree extends commit d3e8b6d with sequence-aware recovery,
+candidate validation, planner isolation, and adversarial regression tests. Its
+verification includes:
+
+- 131 passing tests, including seven adversarial recovery tests.
+- Zero unassigned flights in the combined scenario and three seeded variants.
+- Combined/seeded scores of 51.3, 51.3, 51.3, and 51.8.
+- A valid rush_hour result with score 32.5.
+
+Lower scores are better. These measurements are regression references, not a
+promise that every hidden scenario will produce the same score.
+
+
+14. SHORT EXPLANATION FOR A PRESENTATION
+----------------------------------------
+"Person 1 is the integration and optimization layer. At every event, I merge
+updated flight information, ask Person 4 whether changed gates remain safe,
+and build two complete candidate action lists. The first uses Person 2's
+priority and scarcity ordering together with Person 3's safe gate rankings,
+then improves a joint plan with single-flight moves and two-flight exchanges.
+The second is a stable best-fit planner that handles less restrictive recovery.
+I replay and validate both candidates, compare the safe ones with the project's
+scoring weights, and return one structure of first-time assignments and ordered
+reassignments. The joint approach reduces conflicts and unnecessary movement
+while preserving low walking costs and enough flexibility to recover from
+delays, equipment changes, and outages."
+
+END OF PERSON 1 CODE GUIDE

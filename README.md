@@ -101,6 +101,10 @@ Useful starting scenarios include:
 
 Do not modify `evaluator.py` or the `gms/` package unless challenge staff asks you to. Put your decision logic in your own solution module
 
+For production integration boundaries, implemented failure controls, safety
+assumptions, and regulatory considerations, see
+[`OPERATIONAL_READINESS.md`](OPERATIONAL_READINESS.md).
+
 ## Evaluation
 The evaluator takes into consideration a couple of things:
 
