@@ -199,7 +199,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GMS Visualizer</title>
+<title>Gate Management Dashboard</title>
 <style>
   :root { --labelw: 168px; --ruler: 30px; }
   * { box-sizing: border-box; }
@@ -260,6 +260,32 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .flight-board .delayed, .flight-board .gate-changed, .flight-board .diverted { color: #f0883e; }
   .flight-board .cancelled { color: #f85149; }
   .flight-board .board-empty { color: #8b949e; text-align: center; padding: 18px; }
+  .compare-caption { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+                     margin: 12px 0; color: #8b949e; font-size: 12px; }
+  .solution-score-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+                          margin: -7px 2px 14px; color: #8b949e; font-size: 12px; }
+  .compare-completions { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+  .compare-completion { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px;
+                        background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+  .compare-timelines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .compare-timeline-pane { min-width: 0; background: #0d1117; border: 1px solid #30363d; border-radius: 9px; overflow: hidden; }
+  .compare-timeline-pane h4 { margin: 0; padding: 10px 12px; background: #1b2530; color: #e6edf3; font-size: 13px; }
+  .compare-timeline-scroll { overflow-x: auto; }
+  .compare-timeline-chart { position: relative; min-width: 680px; padding-bottom: 5px; }
+  .compare-time-ruler, .compare-timeline-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); }
+  .compare-time-ruler { height: 30px; border-bottom: 1px solid #30363d; }
+  .compare-time-label { position: absolute; top: 8px; transform: translateX(-50%); color: #8b949e; font-size: 9px; white-space: nowrap; }
+  .compare-time-label:first-child { transform: none; }
+  .compare-timeline-row { min-height: 30px; }
+  .compare-timeline-gate { display: flex; align-items: center; padding-left: 8px; color: #8b949e; font-size: 10px; border-bottom: 1px solid #1b222b; }
+  .compare-timeline-track { position: relative; min-width: 0; min-height: 30px; border-bottom: 1px solid #1b222b; }
+  .compare-time-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: #26313c; pointer-events: none; }
+  .compare-time-gridline.major { background: #364453; }
+  .compare-timeline-bar { position: absolute; top: 5px; height: 19px; box-sizing: border-box; overflow: hidden; white-space: nowrap;
+                          border-radius: 3px; padding: 2px 3px; color: #0d1117; font-size: 9px; font-weight: 750; }
+  .compare-timeline-bar.compare-bar-different { outline: 2px solid #f0883e; z-index: 2; }
+  .compare-playhead { position: absolute; top: 30px; bottom: 5px; width: 2px; background: #f85149; z-index: 3; pointer-events: none; }
+  @media (max-width: 950px) { .compare-timelines { grid-template-columns: 1fr; } }
   .runbar label { font-size: 12px; color: #8b949e; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; }
   .errorBox { display: none; background: #2a1216; border: 1px solid #f85149; color: #ffb4ad;
               border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px;
@@ -381,16 +407,15 @@ _TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 <header>
-  <h1 id="title">Gate Management System</h1>
-  <span class="sub" id="subtitle"></span>
-  <span id="result" class="badge"></span>
+  <h1 id="title">Gate Management Dashboard</h1>
 </header>
 
 <div class="wrap">
   <div class="tabs" role="tablist" aria-label="Dashboard sections">
     <button class="tab-button active" id="visualTabButton" role="tab" aria-selected="true" aria-controls="visualTab">VISUAL SIMULATION</button>
-    <button class="tab-button" id="moreInfoTabButton" role="tab" aria-selected="false" aria-controls="moreInfoTab">MORE INFO</button>
     <button class="tab-button" id="boardsTabButton" role="tab" aria-selected="false" aria-controls="boardsTab">DEPARTURES AND ARRIVALS</button>
+    <button class="tab-button" id="compareTabButton" role="tab" aria-selected="false" aria-controls="compareTab">COMPARE SOLUTIONS</button>
+    <button class="tab-button" id="moreInfoTabButton" role="tab" aria-selected="false" aria-controls="moreInfoTab">MORE INFO</button>
   </div>
 
   <div id="errorBox" class="errorBox"></div>
@@ -438,6 +463,11 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <button id="tnext">&#9654;</button>
       <button id="playDec" class="primary">&#9654; Decisions</button>
     </div>
+  </div>
+
+  <div class="solution-score-strip" data-score-strip>
+    <span class="solution-score-name" data-score-name>Solution: —</span>
+    <span class="badge" data-score-result>NOT RUN</span>
   </div>
 
   <div class="panel" style="margin-top:16px">
@@ -491,6 +521,11 @@ _TEMPLATE = r"""<!DOCTYPE html>
       <button id="tnextMore">&#9654;</button>
       <button id="playDecMore" class="primary">&#9654; Decisions</button>
     </div>
+  </div>
+
+  <div class="solution-score-strip" data-score-strip>
+    <span class="solution-score-name" data-score-name>Solution: —</span>
+    <span class="badge" data-score-result>NOT RUN</span>
   </div>
 
   <div id="banner" class="banner" style="display:none"></div>
@@ -560,6 +595,11 @@ _TEMPLATE = r"""<!DOCTYPE html>
     </div>
   </div>
 
+  <div class="solution-score-strip" data-score-strip>
+    <span class="solution-score-name" data-score-name>Solution: —</span>
+    <span class="badge" data-score-result>NOT RUN</span>
+  </div>
+
   <div class="flight-boards">
     <div class="flight-board" aria-labelledby="arrivalsBoardTitle">
       <h2 id="arrivalsBoardTitle">ARRIVALS</h2>
@@ -573,6 +613,78 @@ _TEMPLATE = r"""<!DOCTYPE html>
     </div>
   </div>
   </section>
+
+  <section id="compareTab" class="tab-pane" role="tabpanel" aria-labelledby="compareTabButton">
+  <div id="runbarCompare" class="runbar" style="display:none">
+    <div class="group">
+      <label>Scenario</label>
+      <select id="scenarioSelectCompare" class="scenario-select"></select>
+    </div>
+    <div class="group">
+      <label>Solution A</label>
+      <select id="solutionSelectCompareA" class="compare-solution compare-solution-a"></select>
+    </div>
+    <div class="group">
+      <label>Solution B</label>
+      <select id="solutionSelectCompareB" class="compare-solution compare-solution-b"></select>
+    </div>
+    <button id="compareBtn" class="primary">Compare</button>
+    <span class="muted" id="compareStatus"></span>
+  </div>
+
+  <div class="toolbar">
+    <div class="group">
+      <button id="playCompare" class="primary">&#9654; Play</button>
+      <button id="resetCompare">&#8634; Reset</button>
+      <span class="clock" id="clockCompare">--:--</span>
+    </div>
+    <div class="group" style="flex:1; min-width:240px;">
+      <span class="muted">clock</span>
+      <input type="range" id="scrubCompare" min="0" max="1000" value="0" style="flex:1;">
+    </div>
+    <div class="group">
+      <span class="muted">speed</span>
+      <select id="speedCompare" class="playback-speed">
+        <option value="4">0.1x</option><option value="10">0.25x</option>
+        <option value="20">0.5x</option><option value="40" selected>1x</option>
+        <option value="80">2x</option><option value="160">4x</option>
+      </select>
+    </div>
+    <div class="sep"></div>
+    <div class="group">
+      <span class="muted">plan&nbsp;@</span>
+      <button id="tprevCompare">&#9664;</button>
+      <span class="clock" id="tickLabelCompare" style="font-size:14px; min-width:90px; text-align:center;"></span>
+      <button id="tnextCompare">&#9654;</button>
+      <button id="playDecCompare" class="primary">&#9654; Decisions</button>
+    </div>
+  </div>
+
+  <div class="compare-completions" aria-live="polite">
+    <div class="compare-completion"><span class="muted" id="compareSolutionLabelA">Solution A</span>
+      <span class="badge" id="compareCompletionA">NOT RUN</span></div>
+    <div class="compare-completion"><span class="muted" id="compareSolutionLabelB">Solution B</span>
+      <span class="badge" id="compareCompletionB">NOT RUN</span></div>
+  </div>
+
+  <div class="panel">
+    <h3>Gate assignment comparison</h3>
+    <div class="compare-timelines">
+      <div class="compare-timeline-pane">
+        <h4 id="compareTimelineHeadingA">SOLUTION A</h4>
+        <div class="compare-timeline-scroll"><div id="compareTimelineA"></div></div>
+      </div>
+      <div class="compare-timeline-pane">
+        <h4 id="compareTimelineHeadingB">SOLUTION B</h4>
+        <div class="compare-timeline-scroll"><div id="compareTimelineB"></div></div>
+      </div>
+    </div>
+    <div class="compare-caption">
+      <span id="compareClock">Choose two solutions and run the comparison.</span>
+      <span id="compareSummary"></span>
+    </div>
+  </div>
+  </section>
 </div>
 
 <script>
@@ -580,6 +692,8 @@ const MODE = __MODE_JSON__;
 const SERVER_MODE = !!MODE.server;
 
 let TRACE = null;
+let TRACE_COMPARE_B = null;
+let COMPARE_TICK_A = -1, COMPARE_TICK_B = -1;
 let TMIN = 0, TMAX = 1, SPAN = 1, OPEN = Infinity;
 const TYPE_COLOR = {0: "#8b949e", 1: "#58a6ff", 2: "#3fb950"};
 const TYPE_SHORT = {0: "CARGO", 1: "DOM", 2: "INTL"};
@@ -604,6 +718,7 @@ function clampEnd(e){ return e >= OPEN ? TMAX : e; }
 // ---- load a trace (fresh page-load, or a new Run) --------------------------
 function loadTrace(trace){
   TRACE = trace;
+  COMPARE_TICK_A = -1; COMPARE_TICK_B = -1;
   TMIN = trace.time_min; TMAX = trace.time_max + MOVE_MINUTES; SPAN = Math.max(1, TMAX - TMIN);
   OPEN = trace.outage_open_end;
   planIdx = 0; clock = TMIN; playing = false;
@@ -611,20 +726,37 @@ function loadTrace(trace){
   document.getElementById("playDec").innerHTML = "&#9654; Decisions";
   document.getElementById("playDecMore").innerHTML = "&#9654; Decisions";
   document.getElementById("playDecBoards").innerHTML = "&#9654; Decisions";
+  document.getElementById("playDecCompare").innerHTML = "&#9654; Decisions";
   document.getElementById("chart").innerHTML = "";
   buildStatic();
   renderPlan();
   setClockTime(TMIN);
 }
 
+function scoreText(result){
+  const score = result && result.score;
+  return score == null || !Number.isFinite(Number(score)) ? "—" : Number(score).toFixed(2);
+}
+
+function renderSingleSolutionScores(){
+  for(const strip of document.querySelectorAll("[data-score-strip]")){
+    const trace = TRACE;
+    const label = strip.querySelector("[data-score-name]");
+    const badge = strip.querySelector("[data-score-result]");
+    label.textContent = `Solution: ${trace?.solution || "—"}`;
+    badge.className = "badge";
+    if(!trace){ badge.textContent = "NOT RUN"; continue; }
+    const completed = trace.result?.status === "OK";
+    badge.textContent = completed
+      ? `COMPLETED · score ${scoreText(trace.result)}` : "FAILED";
+    badge.classList.add(completed ? "ok" : "fail");
+  }
+}
+
 // ---- static scaffold (rebuilt for every trace) ------------------------------
 function buildStatic(){
-  document.getElementById("title").textContent = "Gate Management System — " + TRACE.scenario_name;
-  document.getElementById("subtitle").textContent = "solution: " + TRACE.solution;
-  const r = TRACE.result, badge = document.getElementById("result");
-  if(r.status === "OK"){ badge.className = "badge ok";
-    badge.textContent = "COMPLETED · score " + (r.score==null?"-":r.score.toFixed(2)); }
-  else { badge.className = "badge fail"; badge.textContent = "HARD FAILURE: " + (r.reason||""); }
+  document.getElementById("title").textContent = "Gate Management Dashboard";
+  renderSingleSolutionScores();
 
   const chart = document.getElementById("chart");
   // ruler
@@ -866,6 +998,7 @@ function renderPlan(){
   document.getElementById("tickLabel").textContent = phase + tick.time_label;
   document.getElementById("tickLabelMore").textContent = phase + tick.time_label;
   document.getElementById("tickLabelBoards").textContent = phase + tick.time_label;
+  document.getElementById("tickLabelCompare").textContent = phase + tick.time_label;
   document.getElementById("tickLabel2").textContent = tick.time_label + (planIdx === 0 ? " (initial plan)" : "");
   for(const tr of document.querySelectorAll("[data-track]")) tr.innerHTML = "";
 
@@ -1139,16 +1272,138 @@ function renderFlightBoards(tick, t){
   document.getElementById("arrivalsBoard").innerHTML = renderRows(arrivals, "No arrivals in this schedule.");
 }
 
+function comparisonPlanIndex(trace, t){
+  let index = 0;
+  for(let i = 0; i < (trace.ticks || []).length; i++){
+    if(trace.ticks[i].time <= t) index = i;
+    else break;
+  }
+  return index;
+}
+
+function renderComparisonTimeline(root, trace, tick, differentFlights){
+  const start = Number(trace.time_min) || 0;
+  const end = (Number(trace.time_max) || start) + MOVE_MINUTES;
+  const span = Math.max(1, end - start);
+  const width = Math.max(680, Math.round(span * 0.7));
+  const labelWidth = 72;
+  const trackWidth = width - labelWidth;
+  const step = span > 900 ? 120 : span > 480 ? 60 : 30;
+  const times = [];
+  for(let minute = start; minute <= end; minute += step) times.push(minute);
+  if(!times.length || times[times.length - 1] < end) times.push(end);
+  const escape = value => String(value ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  const marks = times.map((minute, index) => {
+    const pct = Math.max(0, Math.min(1, (minute - start) / span));
+    const major = index % 2 === 0 ? " major" : "";
+    return `<i class="compare-time-gridline${major}" style="left:${pct * 100}%"></i>`;
+  }).join("");
+  const labels = times.map(minute => {
+    const pct = Math.max(0, Math.min(1, (minute - start) / span));
+    return `<span class="compare-time-label" style="left:${pct * 100}%">${escape(fmt(minute))}</span>`;
+  }).join("");
+  const rows = (trace.gates || []).map(gate => {
+    const bookings = (tick.plan && tick.plan[gate.id]) || [];
+    const bars = bookings.flatMap(booking => (booking.intervals || []).map(interval => {
+      const left = Math.max(0, Math.min(1, (interval[0] - start) / span));
+      const right = Math.max(0, Math.min(1, (interval[1] - start) / span));
+      if(right <= left) return "";
+      const different = differentFlights.has(booking.flight_id);
+      const title = `${shortId(booking.flight_id)} at ${gate.id} · ${fmt(interval[0])}–${fmt(interval[1])}`;
+      return `<span class="compare-timeline-bar${different ? " compare-bar-different" : ""}"`
+        + ` style="left:${left * 100}%;width:${Math.max(0.25, (right-left) * 100)}%;background:${colorFor(booking.flight_id)}"`
+        + ` title="${escape(title)}">${escape(shortId(booking.flight_id))}</span>`;
+    })).join("");
+    return `<div class="compare-timeline-row"><div class="compare-timeline-gate">${escape(gate.id)}</div>`
+      + `<div class="compare-timeline-track">${marks}${bars}</div></div>`;
+  }).join("");
+  const initial = Math.max(0, Math.min(1, (clock - start) / span));
+  root.innerHTML = `<div class="compare-timeline-chart" data-start="${start}" data-span="${span}"`
+    + ` data-track-width="${trackWidth}" style="width:${width}px">`
+    + `<div class="compare-time-ruler"><div></div><div class="compare-timeline-track">${marks}${labels}</div></div>`
+    + `${rows || '<div class="compare-timeline-row"><div class="compare-timeline-gate"></div><div class="compare-timeline-track">No gates in this solution.</div></div>'}`
+    + `<i class="compare-playhead" style="left:${labelWidth + trackWidth * initial}px"></i></div>`;
+}
+
+function moveComparisonPlayheads(t){
+  for(const rootId of ["compareTimelineA", "compareTimelineB"]){
+    const chart = document.querySelector(`#${rootId} .compare-timeline-chart`);
+    if(!chart) continue;
+    const start = Number(chart.dataset.start), span = Number(chart.dataset.span);
+    const trackWidth = Number(chart.dataset.trackWidth);
+    const pct = Math.max(0, Math.min(1, (t - start) / Math.max(1, span)));
+    const playhead = chart.querySelector(".compare-playhead");
+    const position = 72 + trackWidth * pct;
+    if(playhead) playhead.style.left = `${position}px`;
+    const viewport = chart.closest(".compare-timeline-scroll");
+    if(!viewport || !viewport.clientWidth) continue;
+    const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const target = Math.max(0, Math.min(maxScroll, position - viewport.clientWidth * 0.7));
+    if(Math.abs(viewport.scrollLeft - target) > 1) viewport.scrollLeft = target;
+  }
+}
+
+function renderComparison(t){
+  if(!document.getElementById("compareTimelineA")) return;
+  if(!TRACE || !TRACE_COMPARE_B || !TRACE_COMPARE_B.ticks || !TRACE_COMPARE_B.ticks.length){
+    document.getElementById("compareTimelineHeadingA").textContent = "SOLUTION A";
+    document.getElementById("compareTimelineHeadingB").textContent = "SOLUTION B";
+    document.getElementById("compareTimelineA").innerHTML = '<div class="placeholder">Run a comparison to view this timeline.</div>';
+    document.getElementById("compareTimelineB").innerHTML = '<div class="placeholder">Run a comparison to view this timeline.</div>';
+    document.getElementById("compareSummary").textContent = "";
+    COMPARE_TICK_A = -1; COMPARE_TICK_B = -1;
+    return;
+  }
+  const indexB = comparisonPlanIndex(TRACE_COMPARE_B, t);
+  const tickA = TRACE.ticks[planIdx];
+  const tickB = TRACE_COMPARE_B.ticks[indexB];
+  if(COMPARE_TICK_A === planIdx && COMPARE_TICK_B === indexB){
+    moveComparisonPlayheads(t);
+    return;
+  }
+  const gatesA = {}, gatesB = {};
+  for(const [gate, bookings] of Object.entries(tickA.plan || {}))
+    for(const booking of bookings) gatesA[booking.flight_id] = gate;
+  for(const [gate, bookings] of Object.entries(tickB.plan || {}))
+    for(const booking of bookings) gatesB[booking.flight_id] = gate;
+
+  const flights = [...new Set([...Object.keys(gatesA), ...Object.keys(gatesB)])].sort();
+  const differentFlights = new Set();
+  let differences = 0, matches = 0, pending = 0;
+  for(const fid of flights){
+    const gateA = gatesA[fid] || null;
+    const gateB = gatesB[fid] || null;
+    const different = gateA !== null && gateB !== null && gateA !== gateB;
+    const assignedBoth = gateA !== null && gateB !== null;
+    if(different){ differences++; differentFlights.add(fid); }
+    else if(assignedBoth) matches++;
+    else pending++;
+  }
+  document.getElementById("compareTimelineHeadingA").textContent = TRACE.solution || "Solution A";
+  document.getElementById("compareTimelineHeadingB").textContent = TRACE_COMPARE_B.solution || "Solution B";
+  document.getElementById("compareSummary").textContent =
+    `${differences} different · ${matches} matching · ${pending} pending`;
+  renderComparisonTimeline(document.getElementById("compareTimelineA"), TRACE, tickA, differentFlights);
+  renderComparisonTimeline(document.getElementById("compareTimelineB"), TRACE_COMPARE_B, tickB, differentFlights);
+  COMPARE_TICK_A = planIdx; COMPARE_TICK_B = indexB;
+  moveComparisonPlayheads(t);
+}
+
 // ---- clock: move playhead, mark gates in-use / free / down -----------------
 function updateClock(t){
   clock = t;
   document.getElementById("clock").textContent = fmt(t);
   document.getElementById("clockMore").textContent = fmt(t);
   document.getElementById("clockBoards").textContent = fmt(t);
+  document.getElementById("clockCompare").textContent = fmt(t);
+  document.getElementById("compareClock").textContent = `Assignments at ${fmt(t)}`;
   document.getElementById("clock2").textContent = fmt(t);
   document.getElementById("scrub").value = Math.round(frac(t)*1000);
   document.getElementById("scrubMore").value = Math.round(frac(t)*1000);
   document.getElementById("scrubBoards").value = Math.round(frac(t)*1000);
+  document.getElementById("scrubCompare").value = Math.round(frac(t)*1000);
   document.getElementById("playhead").style.left =
     `calc(var(--labelw) + (100% - var(--labelw)) * ${frac(t)})`;
 
@@ -1178,6 +1433,7 @@ function updateClock(t){
   document.getElementById("status").innerHTML = statusRows.join("");
   renderSimulation(tick, t);
   renderFlightBoards(tick, t);
+  renderComparison(t);
 }
 
 // ---- playback --------------------------------------------------------------
@@ -1217,6 +1473,7 @@ function setPlaying(on){
   document.getElementById("play").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   document.getElementById("playMore").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   document.getElementById("playBoards").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
+  document.getElementById("playCompare").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
   if(on){ if(clock >= TMAX) setClockTime(TMIN); raf = requestAnimationFrame(step); }
   else if(raf){ cancelAnimationFrame(raf); raf = null; }
 }
@@ -1243,19 +1500,20 @@ function setDecPlay(on){
   }
   document.getElementById("playDecMore").innerHTML = btn.innerHTML;
   document.getElementById("playDecBoards").innerHTML = btn.innerHTML;
+  document.getElementById("playDecCompare").innerHTML = btn.innerHTML;
 }
 
-for(const id of ["play", "playMore", "playBoards"]) document.getElementById(id).onclick = () => setPlaying(!playing);
-for(const id of ["reset", "resetMore", "resetBoards"]) document.getElementById(id).onclick = () => { setPlaying(false); setClockTime(TMIN); };
-for(const id of ["scrub", "scrubMore", "scrubBoards"]) document.getElementById(id).oninput = (e) => {
+for(const id of ["play", "playMore", "playBoards", "playCompare"]) document.getElementById(id).onclick = () => setPlaying(!playing);
+for(const id of ["reset", "resetMore", "resetBoards", "resetCompare"]) document.getElementById(id).onclick = () => { setPlaying(false); setClockTime(TMIN); };
+for(const id of ["scrub", "scrubMore", "scrubBoards", "scrubCompare"]) document.getElementById(id).oninput = (e) => {
   setPlaying(false); setClockTime(TMIN + (e.target.value/1000)*SPAN);
 };
-for(const id of ["speed", "speedMore", "speedBoards"]) document.getElementById(id).onchange = (e) => {
+for(const id of ["speed", "speedMore", "speedBoards", "speedCompare"]) document.getElementById(id).onchange = (e) => {
   document.querySelectorAll(".playback-speed").forEach(speed => speed.value = e.target.value);
 };
-for(const id of ["tprev", "tprevMore", "tprevBoards"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx-1); };
-for(const id of ["tnext", "tnextMore", "tnextBoards"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx+1); };
-for(const id of ["playDec", "playDecMore", "playDecBoards"]) document.getElementById(id).onclick = () => setDecPlay(!decTimer);
+for(const id of ["tprev", "tprevMore", "tprevBoards", "tprevCompare"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx-1); };
+for(const id of ["tnext", "tnextMore", "tnextBoards", "tnextCompare"]) document.getElementById(id).onclick = () => { setDecPlay(false); setTick(planIdx+1); };
+for(const id of ["playDec", "playDecMore", "playDecBoards", "playDecCompare"]) document.getElementById(id).onclick = () => setDecPlay(!decTimer);
 
 for(const button of document.querySelectorAll(".tab-button")){
   button.onclick = () => {
@@ -1267,6 +1525,7 @@ for(const button of document.querySelectorAll(".tab-button")){
     document.querySelectorAll(".tab-pane").forEach(pane =>
       pane.classList.toggle("active", pane.id === button.getAttribute("aria-controls"))
     );
+    if(button.id === "compareTabButton") moveComparisonPlayheads(clock);
   };
 }
 
@@ -1300,6 +1559,7 @@ function runNow(){
         return;
       }
       const ph = document.getElementById("chartPlaceholder"); if(ph) ph.remove();
+      TRACE_COMPARE_B = null;
       loadTrace(data.trace);
     })
     .catch(err => showError(String(err)))
@@ -1309,13 +1569,71 @@ function runNow(){
     });
 }
 
+function setCompareCompletion(side, solution, data, phase){
+  const label = document.getElementById(`compareSolutionLabel${side}`);
+  const badge = document.getElementById(`compareCompletion${side}`);
+  label.textContent = `${side === "A" ? "Solution A" : "Solution B"}: ${solution || "—"}`;
+  badge.className = "badge";
+  if(phase){
+    badge.textContent = phase;
+    return;
+  }
+  const completed = !data?.error && data?.trace?.result?.status === "OK" && !!data?.trace?.ticks?.length;
+  badge.textContent = completed
+    ? `COMPLETED · score ${scoreText(data.trace.result)}` : "FAILED";
+  badge.classList.add(completed ? "ok" : "fail");
+}
+
+function runComparison(){
+  const pane = document.getElementById("compareTab");
+  const scenario = pane.querySelector(".scenario-select").value;
+  const solutionA = pane.querySelector(".compare-solution-a").value;
+  const solutionB = pane.querySelector(".compare-solution-b").value;
+  const button = document.getElementById("compareBtn");
+  const status = document.getElementById("compareStatus");
+  if(!solutionA || !solutionB || solutionA === solutionB){
+    status.textContent = "Choose two different solutions to compare.";
+    return;
+  }
+  setCompareCompletion("A", solutionA, null, "RUNNING");
+  setCompareCompletion("B", solutionB, null, "RUNNING");
+  button.disabled = true; status.textContent = "running both solutions…"; showError(null);
+  const fetchTrace = solution => fetch(
+    `/api/run?scenario=${encodeURIComponent(scenario)}&solution=${encodeURIComponent(solution)}`
+  ).then(response => response.json());
+  Promise.all([fetchTrace(solutionA), fetchTrace(solutionB)])
+    .then(([dataA, dataB]) => {
+      setCompareCompletion("A", solutionA, dataA);
+      setCompareCompletion("B", solutionB, dataB);
+      const invalid = dataA.error ? dataA : dataB.error ? dataB : null;
+      if(invalid){ showError(invalid.error); return; }
+      if(!dataA.trace?.ticks?.length || !dataB.trace?.ticks?.length){
+        showError("One or both solutions produced no decision ticks.");
+        return;
+      }
+      TRACE_COMPARE_B = dataB.trace;
+      document.querySelectorAll(".solution-select").forEach(select => select.value = solutionA);
+      const placeholder = document.getElementById("chartPlaceholder");
+      if(placeholder) placeholder.remove();
+      loadTrace(dataA.trace);
+    })
+    .catch(error => {
+      setCompareCompletion("A", solutionA, {error});
+      setCompareCompletion("B", solutionB, {error});
+      showError(String(error));
+    })
+    .finally(() => { button.disabled = false; status.textContent = ""; });
+}
+
 if(SERVER_MODE){
   document.getElementById("runbar").style.display = "flex";
   document.getElementById("runbarMore").style.display = "flex";
   document.getElementById("runbarBoards").style.display = "flex";
+  document.getElementById("runbarCompare").style.display = "flex";
   document.getElementById("runBtn").onclick = runNow;
   document.getElementById("runBtnMore").onclick = runNow;
   document.getElementById("runBtnBoards").onclick = runNow;
+  document.getElementById("compareBtn").onclick = runComparison;
   Promise.all([fetch("/api/scenarios").then(r => r.json()),
                fetch("/api/solutions").then(r => r.json())]).then(([scenarios, solutions]) => {
     document.querySelectorAll(".scenario-select").forEach(sel => {
@@ -1326,6 +1644,14 @@ if(SERVER_MODE){
       if(solutions.solutions.includes("solution_scored")) sel.value = "solution_scored";
       else if(solutions.solutions.includes("solution")) sel.value = "solution";
     });
+    document.querySelectorAll(".compare-solution").forEach(sel => {
+      sel.innerHTML = solutions.solutions.map(s => `<option value="${s}">${s}</option>`).join("");
+    });
+    const compareA = document.querySelector(".compare-solution-a");
+    const compareB = document.querySelector(".compare-solution-b");
+    compareA.value = solutions.solutions.includes("solution_scored") ? "solution_scored" : solutions.solutions[0];
+    compareB.value = solutions.solutions.includes("solution") && compareA.value !== "solution"
+      ? "solution" : (solutions.solutions.find(solution => solution !== compareA.value) || compareA.value);
     if(scenarios.scenarios.length && solutions.solutions.length) runNow();
   }).catch(err => showError("Could not load scenario or solution list: " + err));
 } else {
