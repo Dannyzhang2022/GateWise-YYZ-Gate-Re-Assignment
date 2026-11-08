@@ -393,7 +393,8 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .sim-plane-label { max-width: 170px; margin-bottom: 3px; padding: 2px 6px; border-radius: 4px;
                      background: #0d1117; color: #e6edf3; border: 1px solid #303a46;
                      font: 650 11px -apple-system,Segoe UI,Roboto,Arial,sans-serif; white-space: nowrap; }
-  .sim-plane-svg { display: block; height: 40px; overflow: visible; filter: drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
+  .sim-plane-svg { display: block; height: 40px; overflow: visible; transform-origin: 50% 50%;
+                   transition: transform .3s linear; filter: drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
   .sim-plane-shape { stroke: rgba(255,255,255,.9); stroke-width: 2; stroke-linejoin: round; }
   .sim-plane-highlight { fill: none; stroke: rgba(255,255,255,.58); stroke-width: 2; stroke-linecap: round; }
   .sim-plane-priority { position: absolute; right: -4px; top: -8px; padding: 0 4px; border-radius: 8px;
@@ -725,6 +726,12 @@ const TYPE_COLOR = {0: "#8b949e", 1: "#58a6ff", 2: "#3fb950"};
 const TYPE_SHORT = {0: "CARGO", 1: "DOM", 2: "INTL"};
 const TYPE_NAME = {0: "Cargo Terminal", 1: "Domestic Terminal", 2: "International Terminal"};
 const MOVE_MINUTES = 10;
+const DEPARTURE_ROLL_MINUTES = 5;
+const DEPARTURE_CLIMB_MINUTES = 3;
+const DEPARTURE_TOTAL_MINUTES = MOVE_MINUTES + DEPARTURE_ROLL_MINUTES + DEPARTURE_CLIMB_MINUTES;
+const DEPARTURE_RUNWAY_ENTRY = {x:90, y:48.7};
+const DEPARTURE_ROLL_END = {x:97.2, y:48.7};
+const DEPARTURE_EXIT = {x:101.5, y:43};
 let simGatePositions = {};
 
 let planIdx = 0;   // start on the initial plan; press "Decisions" to play the day forward
@@ -749,7 +756,7 @@ function loadTrace(trace){
   manualOverrideMode = false; manualPlanInvalidated = false;
   draggedFlightId = null; manualDragTargets.clear();
   COMPARE_TICK_A = -1; COMPARE_TICK_B = -1;
-  TMIN = trace.time_min; TMAX = trace.time_max + MOVE_MINUTES; SPAN = Math.max(1, TMAX - TMIN);
+  TMIN = trace.time_min; TMAX = trace.time_max + DEPARTURE_TOTAL_MINUTES; SPAN = Math.max(1, TMAX - TMIN);
   OPEN = trace.outage_open_end;
   planIdx = 0; clock = TMIN; playing = false;
   if(decTimer){ clearInterval(decTimer); decTimer = null; }
@@ -1086,8 +1093,8 @@ function buildSimulation(){
 
     <text class="runway-label" x="107" y="318">ARRIVALS</text>
     <text class="runway-label" x="1392" y="318">DEPARTURES</text>
-    <text class="terminal-label" x="380" y="365">DOMESTIC</text>
-    <text class="terminal-label" x="380" y="390">DEPARTURES</text>
+    <text class="terminal-label" x="380" y="365">TERMINAL 1</text>
+    <text class="terminal-label" x="380" y="390">DOMESTIC</text>
     <text class="terminal-label" x="840" y="365">TERMINAL 2</text>
     <text class="terminal-label" x="840" y="390">INTERNATIONAL</text>
     <text class="terminal-label" x="1220" y="365">TERMINAL 3</text>
@@ -1166,7 +1173,8 @@ function renderSimulation(tick, t){
       const lastDeparted = activeInterval ? null : intervals
         .filter(interval => interval[1] <= t)
         .sort((a,b) => b[1] - a[1])[0];
-      const departing = !!lastDeparted && t < lastDeparted[1] + MOVE_MINUTES;
+      const departureElapsed = lastDeparted ? t - lastDeparted[1] : -1;
+      const departing = departureElapsed >= 0 && departureElapsed < DEPARTURE_TOTAL_MINUTES;
       if(!activeInterval && !departing) continue;
       const fid = booking.flight_id;
       visible.add(fid);
@@ -1206,15 +1214,27 @@ function renderSimulation(tick, t){
       const aircraft = (booking.aircraft_types || []).join("/") || "Aircraft";
       const color = colorFor(fid);
       const span = Math.max(55, Math.min(125, 48 + wingspan * 1.05));
-      let x, y;
+      let x, y, heading = 0;
       if(activeInterval){
         const progress = Math.min(1, Math.max(0, t - activeInterval[0]) / MOVE_MINUTES);
         x = 4 + (destination.x - 4) * progress;
         y = 48 + (destination.y - 48) * progress;
       } else {
-        const progress = Math.min(1, Math.max(0, t - lastDeparted[1]) / MOVE_MINUTES);
-        x = destination.x + (96 - destination.x) * progress;
-        y = destination.y + (48 - destination.y) * progress;
+        heading = 90;
+        if(departureElapsed < MOVE_MINUTES){
+          const progress = Math.max(0, departureElapsed) / MOVE_MINUTES;
+          x = destination.x + (DEPARTURE_RUNWAY_ENTRY.x - destination.x) * progress;
+          y = destination.y + (DEPARTURE_RUNWAY_ENTRY.y - destination.y) * progress;
+        } else if(departureElapsed < MOVE_MINUTES + DEPARTURE_ROLL_MINUTES){
+          const progress = (departureElapsed - MOVE_MINUTES) / DEPARTURE_ROLL_MINUTES;
+          x = DEPARTURE_RUNWAY_ENTRY.x + (DEPARTURE_ROLL_END.x - DEPARTURE_RUNWAY_ENTRY.x) * progress;
+          y = DEPARTURE_RUNWAY_ENTRY.y;
+        } else {
+          const progress = (departureElapsed - MOVE_MINUTES - DEPARTURE_ROLL_MINUTES) / DEPARTURE_CLIMB_MINUTES;
+          x = DEPARTURE_ROLL_END.x + (DEPARTURE_EXIT.x - DEPARTURE_ROLL_END.x) * progress;
+          y = DEPARTURE_ROLL_END.y + (DEPARTURE_EXIT.y - DEPARTURE_ROLL_END.y) * progress;
+          heading = 90 - 20 * progress;
+        }
       }
 
       plane.style.left = `${x}%`;
@@ -1227,7 +1247,9 @@ function renderSimulation(tick, t){
       plane.ondragstart = draggable ? event => beginManualDrag(fid, plane, event) : null;
       plane.ondragend = () => finishManualDrag();
       plane.querySelectorAll(".sim-plane-shape").forEach(shape => shape.style.fill = color);
-      plane.querySelector(".sim-plane-svg").style.width = `${span}px`;
+      const aircraftSvg = plane.querySelector(".sim-plane-svg");
+      aircraftSvg.style.width = `${span}px`;
+      aircraftSvg.style.transform = `rotate(${heading}deg)`;
       plane.querySelector(".sim-plane-priority").hidden = !booking.diversion;
       plane.querySelector(".sim-plane-detail").textContent =
         `${aircraft} · ${wingspan}m · Bridge: ${booking.jetbridge_required ? "Y" : "N"} · Gate: ${gateId}`;
@@ -1542,7 +1564,7 @@ function comparisonPlanIndex(trace, t){
 
 function renderComparisonTimeline(root, trace, tick, differentFlights){
   const start = Number(trace.time_min) || 0;
-  const end = (Number(trace.time_max) || start) + MOVE_MINUTES;
+  const end = (Number(trace.time_max) || start) + DEPARTURE_TOTAL_MINUTES;
   const span = Math.max(1, end - start);
   const width = Math.max(680, Math.round(span * 0.7));
   const labelWidth = 72;
