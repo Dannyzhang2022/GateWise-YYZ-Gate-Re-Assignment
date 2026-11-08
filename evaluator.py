@@ -342,6 +342,12 @@ def _snapshot_tick(t, tick_lines, flight_assignments, gate_outages):
             "intervals": [[int(s), int(e)] for s, e in snap.intervals],
             "category": snap.category,
             "diversion": snap.diversion,
+            "wingspan": snap.wingspan,
+            "jetbridge_required": snap.jetbridge_required,
+            "aircraft_types": sorted({
+                leg["aircraftType"] for leg in snap.yyz_legs
+                if leg.get("aircraftType")
+            }),
         })
     outages = {gid: [[int(s), int(e)] for s, e in ws]
                for gid, ws in gate_outages.items() if ws}
@@ -359,6 +365,9 @@ def _build_trace(scenario_path, solution_module, gates, ticks):
 
     bounded = []
     for tk in ticks:
+        # Include decision times as well as physical occupancy so the visualizer
+        # can scrub back to the state before the first arrival or outage.
+        bounded.append(tk["time"])
         for bookings in tk["plan"].values():
             for b in bookings:
                 for s, e in b["intervals"]:

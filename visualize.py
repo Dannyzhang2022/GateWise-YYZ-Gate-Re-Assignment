@@ -295,6 +295,42 @@ _TEMPLATE = r"""<!DOCTYPE html>
   .bar.moved { outline: 2px solid #58a6ff; outline-offset: -1px; animation: pulse 1.4s infinite; z-index: 3; }
   .bar.ghost { opacity: .4; background: #30363d !important; border: 1px dashed #8b949e; color: #8b949e; z-index: 1; }
   .bar.emergency { box-shadow: inset 0 0 0 2px #f85149, 0 0 7px rgba(248,81,73,.55); font-weight: 800; }
+  .sim-shell { overflow-x: auto; border: 1px solid #232a33; border-radius: 10px; background: #0d1117; }
+  .sim-map { position: relative; min-width: 1200px; height: auto; min-height: 624px;
+             aspect-ratio: 1500 / 780; overflow: hidden;
+             background: radial-gradient(ellipse at 54% 50%, #15202a 0, #0d1117 76%); }
+  .airport-footprint { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .airport-footprint .building { fill: #1c2732; stroke: #465566; stroke-width: 3; }
+  .airport-footprint .pier { fill: #202d39; stroke: #526274; stroke-width: 2; }
+  .airport-footprint .apron { fill: #111a22; stroke: #354250; stroke-width: 2; }
+  .airport-footprint .taxi { fill: none; stroke: #526274; stroke-width: 14; stroke-dasharray: 10 8; }
+  .airport-footprint .runway-center { fill: none; stroke: #d7dee6; stroke-width: 4; stroke-dasharray: 12 12; opacity: .8; }
+  .airport-footprint text { fill: #aab6c2; font: 600 12px -apple-system,Segoe UI,Roboto,Arial,sans-serif; letter-spacing: .1px; }
+  .airport-footprint .terminal-label { fill: #c9d1d9; font-size: 14px; font-weight: 650; }
+  .airport-footprint .small-label { fill: #8b949e; font-size: 10px; letter-spacing: .1px; }
+  .airport-footprint .runway-label { fill: #c9d1d9; font-size: 12px; font-weight: 700; letter-spacing: .1px; }
+  .airport-footprint .terminal-label, .airport-footprint .runway-label { text-anchor: middle; }
+  .sim-gate { position: absolute; transform: translate(-50%,-50%) rotate(90deg); width: 54px; height: 25px;
+              border: 1px solid #44515f; border-radius: 5px; background: #202833; color: #c9d1d9;
+              display: grid; place-items: center; font: 650 12px -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  .sim-gate-label { transform: rotate(-90deg); white-space: nowrap; }
+  .sim-gate.occupied { border-color: #f0f6fc; box-shadow: 0 0 8px rgba(240,246,252,.35); }
+  .sim-gate.down { border-color: #f85149; color: #ffb4ad; background: #35191d; }
+  .sim-plane { position: absolute; z-index: 5; transform: translate(-50%,-50%); min-width: 78px;
+               display: flex; flex-direction: column; align-items: center; pointer-events: auto;
+               transition: left .22s linear, top .22s linear; }
+  .sim-plane-label { max-width: 170px; margin-bottom: 3px; padding: 2px 6px; border-radius: 4px;
+                     background: #0d1117; color: #e6edf3; border: 1px solid #303a46;
+                     font: 650 11px -apple-system,Segoe UI,Roboto,Arial,sans-serif; white-space: nowrap; }
+  .sim-plane-svg { display: block; height: 40px; overflow: visible; filter: drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
+  .sim-plane-shape { stroke: rgba(255,255,255,.9); stroke-width: 2; stroke-linejoin: round; }
+  .sim-plane-highlight { fill: none; stroke: rgba(255,255,255,.58); stroke-width: 2; stroke-linecap: round; }
+  .sim-plane-priority { position: absolute; right: -4px; top: -8px; padding: 0 4px; border-radius: 8px;
+                        background: #f85149; color: white; font-size: 9px; font-weight: 800; }
+  .sim-plane.bridge .sim-plane-svg { filter: drop-shadow(0 0 4px #58a6ff) drop-shadow(0 3px 3px rgba(0,0,0,.55)); }
+  .sim-plane-detail { color: #c9d1d9; background: rgba(13,17,23,.88); border-radius: 4px;
+                      padding: 2px 5px; margin-top: 3px; font: 10px -apple-system,Segoe UI,Roboto,Arial,sans-serif; white-space: nowrap; }
+  @media (max-width: 600px) { .sim-map { min-height: 624px; } }
   .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; color: #8b949e; font-size: 12px; align-items: center; }
   .legend .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
   .dis-entry { padding: 6px 0; border-bottom: 1px solid #1b222b; }
@@ -363,6 +399,11 @@ _TEMPLATE = r"""<!DOCTYPE html>
 
   <div id="banner" class="banner" style="display:none"></div>
 
+  <div class="panel" style="margin-top:16px">
+    <h3>YYZ gate simulation <span class="muted" id="simTime"></span></h3>
+    <div class="sim-shell"><div class="sim-map" id="simMap"></div></div>
+  </div>
+
   <div class="chart" id="chart"><div class="placeholder" id="chartPlaceholder">Pick a scenario and press Run.</div></div>
 
   <div class="legend" id="legend"></div>
@@ -395,6 +436,9 @@ let TRACE = null;
 let TMIN = 0, TMAX = 1, SPAN = 1, OPEN = Infinity;
 const TYPE_COLOR = {0: "#8b949e", 1: "#58a6ff", 2: "#3fb950"};
 const TYPE_SHORT = {0: "CARGO", 1: "DOM", 2: "INTL"};
+const TYPE_NAME = {0: "Cargo Terminal", 1: "Domestic Terminal", 2: "International Terminal"};
+const MOVE_MINUTES = 10;
+let simGatePositions = {};
 
 let planIdx = 0;   // start on the initial plan; press "Decisions" to play the day forward
 let clock = 0;
@@ -406,14 +450,14 @@ function pad(n){ return String(n).padStart(2,"0"); }
 function fmt(min){ min = Math.round(min); const d = Math.floor(min/1440), m = ((min%1440)+1440)%1440;
   const s = pad(Math.floor(m/60))+":"+pad(m%60); return d>0 ? s+"+"+d+"d" : s; }
 function frac(t){ return (t - TMIN) / SPAN; }
-function shortId(fid){ const p = fid.split("-"); return p.length>=2 ? p[0]+p[1] : fid; }
+function shortId(fid){ const p = fid.split("-"); return p.length>=2 ? p[0]+" "+p[1] : fid; }
 function colorFor(fid){ let h=0; for(const c of fid) h=(h*31 + c.charCodeAt(0))>>>0; return `hsl(${h%360} 62% 58%)`; }
 function clampEnd(e){ return e >= OPEN ? TMAX : e; }
 
 // ---- load a trace (fresh page-load, or a new Run) --------------------------
 function loadTrace(trace){
   TRACE = trace;
-  TMIN = trace.time_min; TMAX = trace.time_max; SPAN = Math.max(1, TMAX - TMIN);
+  TMIN = trace.time_min; TMAX = trace.time_max + MOVE_MINUTES; SPAN = Math.max(1, TMAX - TMIN);
   OPEN = trace.outage_open_end;
   planIdx = 0; clock = TMIN; playing = false;
   if(decTimer){ clearInterval(decTimer); decTimer = null; }
@@ -421,7 +465,7 @@ function loadTrace(trace){
   document.getElementById("chart").innerHTML = "";
   buildStatic();
   renderPlan();
-  updateClock(TMIN);
+  setClockTime(TMIN);
 }
 
 // ---- static scaffold (rebuilt for every trace) ------------------------------
@@ -475,6 +519,180 @@ function buildStatic(){
     + `<span><span class="sw" style="background:repeating-linear-gradient(45deg,#7a262d,#7a262d 4px,#5a1d22 4px,#5a1d22 8px);border:1px solid #f85149"></span>gate outage</span>`
     + `<span><span class="sw" style="outline:2px solid #fff;background:#444"></span>occupied right now</span>`
     + `<span>&#9879; emergency / diverted flight</span>`;
+  buildSimulation();
+}
+
+function buildSimulation(){
+  const map = document.getElementById("simMap");
+  if(!map) return;
+  map.innerHTML = "";
+  simGatePositions = {};
+
+  const footprint = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  footprint.setAttribute("viewBox", "0 0 1500 780");
+  footprint.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  footprint.classList.add("airport-footprint");
+  footprint.setAttribute("aria-label", "Schematic Pearson airport terminal and apron layout");
+  footprint.innerHTML = `
+    <path class="apron" d="M10 330 H205 V430 H10 Z M1330 330 H1490 V430 H1330 Z"/>
+    <path class="taxi" d="M205 380 H1330"/>
+    <path class="runway-center" d="M22 380 H193 M1342 380 H1478"/>
+
+    <!-- Terminal 1: three individual gate piers, perpendicular to the building. -->
+    <path class="pier" d="M235 100 H285 V280 H235 Z"/>
+    <path class="pier" d="M465 100 H515 V280 H465 Z"/>
+    <path class="pier" d="M355 460 H405 V660 H355 Z"/>
+    <path class="building" d="M235 280 Q215 280 205 305 V430 Q215 460 245 460 H510 Q545 460 555 430 V310 Q545 280 510 280 Z"/>
+    <!-- Terminal 2: enlarged international terminal with one pier per gate. -->
+    <path class="pier" d="M625 75 H675 V255 H625 Z"/>
+    <path class="pier" d="M925 75 H975 V255 H925 Z"/>
+    <path class="pier" d="M625 515 H675 V695 H625 Z"/>
+    <path class="pier" d="M925 515 H975 V695 H925 Z"/>
+    <path class="building" d="M600 255 Q570 265 570 300 V470 Q580 515 615 515 H1010 Q1045 510 1055 475 V300 Q1045 255 1010 255 Z"/>
+    <!-- Terminal 3 is compact and has only its two cargo-gate piers. -->
+    <path class="pier" d="M1145 170 H1195 V320 H1145 Z"/>
+    <path class="pier" d="M1240 440 H1290 V590 H1240 Z"/>
+    <path class="building" d="M1135 320 Q1110 330 1110 355 V410 Q1115 440 1145 440 H1300 Q1320 435 1320 410 V355 Q1315 320 1290 320 Z"/>
+
+    <text class="runway-label" x="107" y="318">ARRIVALS</text>
+    <text class="runway-label" x="1392" y="318">DEPARTURES</text>
+    <text class="terminal-label" x="380" y="365">TERMINAL 1</text>
+    <text class="terminal-label" x="380" y="390">DEPARTURES</text>
+    <text class="terminal-label" x="812" y="365">TERMINAL 2</text>
+    <text class="terminal-label" x="812" y="390">INTERNATIONAL</text>
+    <text class="terminal-label" x="1215" y="365">TERMINAL 3</text>
+    <text class="terminal-label" x="1215" y="390">CARGO</text>`;
+  map.appendChild(footprint);
+
+  // This exercise has synthetic gate IDs rather than real Pearson gate
+  // coordinates. Give every gate a distinct wing and a separated apron slot.
+  const gatePositions = {
+    // Gate markers sit on their drawn terminal piers, perpendicular to the
+    // terminal buildings, and are grouped by the terminal serving each type.
+    D1: {x:17.3,y:24.4}, D2: {x:32.7,y:24.4}, D3: {x:25.3,y:70.5},
+    I1: {x:43.3,y:21.2}, I2: {x:63.3,y:21.2}, I3: {x:43.3,y:77.6}, I4: {x:63.3,y:77.6},
+    C1: {x:78.3,y:31.4}, C2: {x:84.3,y:66},
+  };
+  const fallbackByType = {0: [{x:9,y:79},{x:13,y:85}], 1: [{x:25,y:18}], 2: [{x:76,y:50}]};
+  const counters = {0: 0, 1: 0, 2: 0};
+  for(const gate of TRACE.gates){
+    const type = gate.type;
+    const fallback = fallbackByType[type] || [{x:50,y:50}];
+    const point = gatePositions[gate.id] || fallback[counters[type]++ % fallback.length];
+    const {x, y} = point;
+    const pad = document.createElement("div");
+    pad.className = "sim-gate";
+    pad.dataset.gid = gate.id;
+    const gateLabel = document.createElement("span");
+    gateLabel.className = "sim-gate-label";
+    gateLabel.textContent = gate.id;
+    pad.appendChild(gateLabel);
+    pad.style.left = `${x}%`;
+    pad.style.top = `${y}%`;
+      pad.title = `${gate.id} · ${TYPE_NAME[type] || "Gate"} · ${gate.max_wingspan}m max · jetbridge ${gate.jetbridge ? "yes" : "no"}`;
+    map.appendChild(pad);
+    simGatePositions[gate.id] = {x, y};
+  }
+
+  const planeLayer = document.createElement("div");
+  planeLayer.id = "simPlaneLayer";
+  planeLayer.style.cssText = "position:absolute;inset:0;pointer-events:none";
+  map.appendChild(planeLayer);
+}
+
+function renderSimulation(tick, t){
+  const layer = document.getElementById("simPlaneLayer");
+  if(!layer || !tick) return;
+  document.getElementById("simTime").textContent = `· ${fmt(t)}`;
+  const planesById = new Map([...layer.children].map(plane => [plane.dataset.fid, plane]));
+
+  for(const gate of TRACE.gates){
+    const pad = document.querySelector(`.sim-gate[data-gid="${gate.id}"]`);
+    if(!pad) continue;
+    const occupant = (tick.plan[gate.id] || []).find(booking =>
+      (booking.intervals || []).some(interval => t >= interval[0] && t < interval[1])
+    );
+    const down = (tick.outages[gate.id] || []).some(window => t >= window[0] && t < clampEnd(window[1]));
+    pad.classList.toggle("occupied", !!occupant);
+    pad.classList.toggle("down", down);
+  }
+
+  const visible = new Set();
+  for(const [gateId, bookings] of Object.entries(tick.plan || {})){
+    const destination = simGatePositions[gateId];
+    if(!destination) continue;
+    for(const booking of bookings){
+      const intervals = booking.intervals || [];
+      const activeInterval = intervals.find(interval => t >= interval[0] && t < interval[1]);
+      const lastDeparted = activeInterval ? null : intervals
+        .filter(interval => interval[1] <= t)
+        .sort((a,b) => b[1] - a[1])[0];
+      const departing = !!lastDeparted && t < lastDeparted[1] + MOVE_MINUTES;
+      if(!activeInterval && !departing) continue;
+      const fid = booking.flight_id;
+      visible.add(fid);
+      let plane = planesById.get(fid);
+      if(!plane){
+        plane = document.createElement("div");
+        plane.className = "sim-plane";
+        plane.dataset.fid = fid;
+        const label = document.createElement("div");
+        label.className = "sim-plane-label";
+        label.textContent = shortId(fid);
+        const aircraft = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        aircraft.classList.add("sim-plane-svg");
+        aircraft.setAttribute("viewBox", "0 0 120 56");
+        aircraft.setAttribute("role", "img");
+        aircraft.setAttribute("aria-label", "airplane");
+        const wing = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        wing.classList.add("sim-plane-shape");
+        wing.setAttribute("d", "M55 19 L25 29 Q20 30 22 34 L55 30 L65 30 L98 34 Q100 30 95 29 L65 19 Z");
+        const fuselage = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        fuselage.classList.add("sim-plane-shape");
+        fuselage.setAttribute("d", "M60 2 C55 10 56 18 56 25 L52 42 L45 49 L46 52 L60 48 L74 52 L75 49 L68 42 L64 25 C64 18 65 10 60 2 Z");
+        const highlight = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        highlight.classList.add("sim-plane-highlight");
+        highlight.setAttribute("d", "M59 8 C58 16 59 25 59 42 L60 46");
+        aircraft.append(wing, fuselage, highlight);
+        const priority = document.createElement("span");
+        priority.className = "sim-plane-priority";
+        priority.textContent = "EMERGENCY";
+        priority.hidden = true;
+        const detail = document.createElement("div");
+        detail.className = "sim-plane-detail";
+        plane.append(label, aircraft, priority, detail);
+        layer.appendChild(plane);
+      }
+      const wingspan = Number(booking.wingspan) || 36;
+      const aircraft = (booking.aircraft_types || []).join("/") || "Aircraft";
+      const color = colorFor(fid);
+      const span = Math.max(55, Math.min(125, 48 + wingspan * 1.05));
+      let x, y;
+      if(activeInterval){
+        const progress = Math.min(1, Math.max(0, t - activeInterval[0]) / MOVE_MINUTES);
+        x = 4 + (destination.x - 4) * progress;
+        y = 48 + (destination.y - 48) * progress;
+      } else {
+        const progress = Math.min(1, Math.max(0, t - lastDeparted[1]) / MOVE_MINUTES);
+        x = destination.x + (96 - destination.x) * progress;
+        y = destination.y + (48 - destination.y) * progress;
+      }
+
+      plane.style.left = `${x}%`;
+      plane.style.top = `${y}%`;
+      plane.classList.toggle("bridge", !!booking.jetbridge_required);
+      plane.dataset.phase = departing ? "departing" : "arriving";
+      plane.querySelectorAll(".sim-plane-shape").forEach(shape => shape.style.fill = color);
+      plane.querySelector(".sim-plane-svg").style.width = `${span}px`;
+      plane.querySelector(".sim-plane-priority").hidden = !booking.diversion;
+      plane.querySelector(".sim-plane-detail").textContent =
+        `${aircraft} · ${wingspan}m · Bridge: ${booking.jetbridge_required ? "Y" : "N"} · Gate: ${gateId}`;
+      plane.title = `${shortId(fid)} · ${aircraft} · ${wingspan}m · Bridge: ${booking.jetbridge_required ? "Y" : "N"} · Gate: ${gateId}${departing ? " · departing YYZ" : ""}`;
+    }
+  }
+  for(const plane of [...layer.children]){
+    if(!visible.has(plane.dataset.fid)) plane.remove();
+  }
 }
 
 // ---- render the plan for the selected decision tick ------------------------
@@ -685,9 +903,31 @@ function updateClock(t){
       + `<span style="color:${down?"#f85149":occupant?"#3fb950":"#6e7681"}">${down?"outage":occupant?occupant:"free"}</span></div>`);
   }
   document.getElementById("status").innerHTML = statusRows.join("");
+  renderSimulation(tick, t);
 }
 
 // ---- playback --------------------------------------------------------------
+function planIndexAtTime(t){
+  let index = 0;
+  for(let i = 0; i < TRACE.ticks.length; i++){
+    if(TRACE.ticks[i].time <= t) index = i;
+    else break;
+  }
+  return index;
+}
+
+function setClockTime(t){
+  t = Math.max(TMIN, Math.min(TMAX, t));
+  const nextPlan = planIndexAtTime(t);
+  clock = t;
+  if(nextPlan !== planIdx){
+    planIdx = nextPlan;
+    renderPlan();
+  } else {
+    updateClock(t);
+  }
+}
+
 function step(ts){
   if(!playing) return;
   if(lastTs == null) lastTs = ts;
@@ -695,24 +935,22 @@ function step(ts){
   const perSec = +document.getElementById("speed").value;   // sim-minutes per real second
   let t = clock + dt*perSec;
   if(t >= TMAX){ t = TMAX; setPlaying(false); }
-  // Auto-advance the decision plan as the clock passes each tick's time
-  let newIdx = planIdx;
-  for(let i = newIdx + 1; i < TRACE.ticks.length; i++){
-    if(TRACE.ticks[i].time <= t) newIdx = i;
-    else break;
-  }
-  if(newIdx !== planIdx){ planIdx = newIdx; renderPlan(); }
-  updateClock(t);
+  setClockTime(t);
   if(playing) raf = requestAnimationFrame(step);
 }
 function setPlaying(on){
   playing = on; lastTs = null;
   document.getElementById("play").innerHTML = on ? "&#10073;&#10073; Pause" : "&#9654; Play";
-  if(on){ if(clock >= TMAX) updateClock(TMIN); raf = requestAnimationFrame(step); }
+  if(on){ if(clock >= TMAX) setClockTime(TMIN); raf = requestAnimationFrame(step); }
   else if(raf){ cancelAnimationFrame(raf); raf = null; }
 }
 
-function setTick(i){ planIdx = Math.max(0, Math.min(TRACE.ticks.length-1, i)); renderPlan(); }
+function setTick(i){
+  setPlaying(false);
+  planIdx = Math.max(0, Math.min(TRACE.ticks.length-1, i));
+  clock = TRACE.ticks[planIdx].time;
+  renderPlan();
+}
 
 function setDecPlay(on){
   const btn = document.getElementById("playDec");
@@ -730,8 +968,8 @@ function setDecPlay(on){
 }
 
 document.getElementById("play").onclick = () => setPlaying(!playing);
-document.getElementById("reset").onclick = () => { setPlaying(false); updateClock(TMIN); };
-document.getElementById("scrub").oninput = (e) => { setPlaying(false); updateClock(TMIN + (e.target.value/1000)*SPAN); };
+document.getElementById("reset").onclick = () => { setPlaying(false); setClockTime(TMIN); };
+document.getElementById("scrub").oninput = (e) => { setPlaying(false); setClockTime(TMIN + (e.target.value/1000)*SPAN); };
 document.getElementById("tprev").onclick = () => { setDecPlay(false); setTick(planIdx-1); };
 document.getElementById("tnext").onclick = () => { setDecPlay(false); setTick(planIdx+1); };
 document.getElementById("playDec").onclick = () => setDecPlay(!decTimer);

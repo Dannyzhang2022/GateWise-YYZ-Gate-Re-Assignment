@@ -18,6 +18,7 @@ def test_record_mode_returns_a_trace(static_path):
     trace = result["trace"]
     assert [g["id"] for g in trace["gates"]]          # gate metadata present
     assert len(trace["ticks"]) == 2                   # one per info-time
+    assert trace["time_min"] <= trace["ticks"][0]["time"]
     # last tick: AC-401 moved off the outaged D1
     last = trace["ticks"][-1]
     assert "D1" in last["outages"]
@@ -29,6 +30,29 @@ def test_record_mode_returns_a_trace(static_path):
     assert any("moved from gate D1" in event["subject"]
                and event["reason"] for event in solutions)
     assert "DISRUPTION:" in _TEMPLATE and "SOLUTION:" in _TEMPLATE and "REASON:" in _TEMPLATE
+    moved_flight = next(booking for bookings in last["plan"].values() for booking in bookings)
+    assert {"wingspan", "jetbridge_required", "aircraft_types"} <= moved_flight.keys()
+    assert 'id="simMap"' in _TEMPLATE and "function renderSimulation" in _TEMPLATE
+    assert "function planIndexAtTime" in _TEMPLATE and "function setClockTime" in _TEMPLATE
+    assert _TEMPLATE.index('id="simMap"') < _TEMPLATE.index('id="chart"')
+    assert ">DEPARTURES</text>" in _TEMPLATE and 'setAttribute("viewBox", "0 0 1500 780")' in _TEMPLATE
+    assert "dataset.phase" in _TEMPLATE and "MOVE_MINUTES" in _TEMPLATE
+    assert "CONCOURSE" not in _TEMPLATE and "sim-legend" not in _TEMPLATE
+    assert "text-anchor: middle" in _TEMPLATE and "runway-threshold" not in _TEMPLATE
+    assert 'M55 19 L25 29' in _TEMPLATE and 'M60 2 C55 10' in _TEMPLATE
+    assert ">TERMINAL 1</text>" in _TEMPLATE and ">DEPARTURES</text>" in _TEMPLATE
+    assert ">TERMINAL 2</text>" in _TEMPLATE
+    assert ">TERMINAL 3</text>" in _TEMPLATE
+    assert ">INTERNATIONAL</text>" in _TEMPLATE
+    assert ">CARGO</text>" in _TEMPLATE
+    assert "CARGO APRON" not in _TEMPLATE
+    assert "rotate(90deg)" in _TEMPLATE
+    assert "sim-gate-label { transform: rotate(-90deg)" in _TEMPLATE
+    assert 'gateLabel.className = "sim-gate-label"' in _TEMPLATE
+    assert _TEMPLATE.count('<path class="pier"') == 9  # 3 domestic, 4 international, 2 cargo
+    assert 'p[0]+" "+p[1]' in _TEMPLATE
+    assert 'Bridge: ${booking.jetbridge_required ? "Y" : "N"} · Gate: ${gateId}' in _TEMPLATE
+    assert "DEPARTING" not in _TEMPLATE
 
 
 def test_generate_writes_self_contained_html(static_path):
